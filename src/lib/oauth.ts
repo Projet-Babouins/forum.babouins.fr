@@ -8,8 +8,9 @@ import { createGitHub } from './github';
  * (contenu, pull requests, discussions) et sur les dépôts où elle est installée. Il reste
  * dans la session, côté serveur, et expire au bout de 8 heures.
  *
- * Qui est membre ? Une seule source de vérité pour toute la plateforme : le rôle sur le dépôt
- * de la doc (MEMBERS_REPO). Qui peut écrire la doc peut écrire sur le forum.
+ * Le forum est ouvert à tout compte GitHub. Seuls les référents sont à part : une seule source
+ * de vérité pour toute la plateforme, le rôle « Maintain » ou « Admin » sur le dépôt de la doc
+ * (MEMBERS_REPO).
  * Doc : https://docs.github.com/fr/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app
  */
 
@@ -27,11 +28,8 @@ export function buildAuthorizeUrl(state: string, redirectUri: string): string {
 	return url.toString();
 }
 
-/**
- * Échange le code reçu de GitHub contre l'identité de la personne et son jeton.
- * Renvoie `null` si elle n'est pas membre du projet.
- */
-export async function authenticate(code: string, redirectUri: string): Promise<{ user: ForumUser; token: string } | null> {
+/** Échange le code reçu de GitHub contre l'identité de la personne et son jeton. */
+export async function authenticate(code: string, redirectUri: string): Promise<{ user: ForumUser; token: string }> {
 	const response = await fetch(new URL('/login/oauth/access_token', GITHUB_URL), {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -48,15 +46,13 @@ export async function authenticate(code: string, redirectUri: string): Promise<{
 			.get<{ permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } }>(`/repos/${MEMBERS_REPO}`)
 			.catch(() => ({ permissions: undefined })),
 	]);
-	if (!repo.permissions?.push) return null;
-
 	return {
 		token,
 		user: {
 			login: profile.login,
 			name: profile.name || profile.login,
 			avatar: profile.avatar_url,
-			role: repo.permissions.maintain || repo.permissions.admin ? 'referent' : 'membre',
+			role: repo.permissions?.maintain || repo.permissions?.admin ? 'referent' : 'membre',
 		},
 	};
 }

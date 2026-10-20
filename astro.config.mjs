@@ -45,7 +45,7 @@ export default defineConfig({
 				access: 'public',
 				default: 'Projet-Babouins/forum.babouins.fr',
 			}),
-			// Dépôt qui fait les membres : qui peut écrire la doc peut écrire sur le forum.
+			// Dépôt qui fait les référents : rôle « Maintain » ou « Admin » sur la doc.
 			MEMBERS_REPO: envField.string({
 				context: 'server',
 				access: 'public',

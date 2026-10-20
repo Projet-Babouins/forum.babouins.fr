@@ -1,7 +1,7 @@
 /**
- * Rôle d'un membre, déduit de son rôle sur le dépôt de la doc (MEMBERS_REPO) :
- * - `membre`   : droit d'écriture sur la doc. Peut écrire sur le forum.
- * - `referent` : rôle « Maintain » ou « Admin ». Peut aussi choisir la solution d'une question.
+ * Rôle sur le forum, déduit du rôle sur le dépôt de la doc (MEMBERS_REPO) :
+ * - `membre`   : tout compte GitHub connecté. Lit et écrit sur le forum.
+ * - `referent` : rôle « Maintain » ou « Admin » sur la doc. Peut aussi choisir la solution d'une question.
  */
 type MemberRole = 'membre' | 'referent';
 

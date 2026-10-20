@@ -20,12 +20,6 @@ export const GET: APIRoute = async ({ session, redirect, url }) => {
 	if (authenticated === undefined) {
 		return new Response('La connexion avec GitHub a échoué. Réessaie depuis le forum.', { status: 502 });
 	}
-	if (!authenticated) {
-		return new Response(
-			"Ce compte GitHub n'est pas encore membre du projet. Demande à un référent de t'ajouter à l'organisation Projet-Babouins.",
-			{ status: 403 },
-		);
-	}
 
 	const returnTo = await session?.get('returnTo');
 	// Nouvel identifiant de session à la connexion (contre la fixation de session).

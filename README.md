@@ -13,7 +13,7 @@ Bienvenue sur le dépôt de [forum.babouins.fr](https://forum.babouins.fr), le f
 
 Le forum n'a pas de base de données : **ses messages sont les GitHub Discussions de ce dépôt**. Le site n'en est que la vitrine, plus simple à lire, et reliée à la doc. Conséquences :
 
-- le forum est **réservé aux membres** : on se connecte avec son compte GitHub, même pour lire ;
+- le forum est **réservé aux personnes connectées** : on se connecte avec son compte GitHub (n'importe lequel), même pour lire ;
 - le forum lit et écrit avec le jeton de la personne connectée : un message part sur GitHub **à son nom**, et le serveur n'a aucun jeton à lui ;
 - la modération, l'historique et les sauvegardes sont ceux de GitHub ;
 - un message écrit directement sur github.com apparaît aussi sur le forum.
@@ -35,13 +35,14 @@ Comment ça marche :
 
 ### ✅ Qui peut faire quoi ?
 
-Une seule source de vérité pour toute la plateforme : **le rôle sur le dépôt de la doc**.
+Tout compte GitHub peut se connecter. Les référents viennent d'une seule source de vérité pour toute la plateforme : **le rôle sur le dépôt de la doc**.
 
-| Rôle sur docs.babouins.fr | Sur le forum |
+| Qui | Sur le forum |
 | --- | --- |
-| Aucun | Rien : la connexion est refusée |
-| "Write" (membre) | Lire, poser une question, répondre, choisir la solution de **ses** questions |
-| "Maintain" ou "Admin" (référent) | En plus : choisir la solution de n'importe quelle question |
+| Tout compte GitHub connecté | Lire, poser une question, répondre, choisir la solution de **ses** questions |
+| "Maintain" ou "Admin" sur docs.babouins.fr (référent) | En plus : choisir la solution de n'importe quelle question |
+
+Pour que n'importe quel compte puisse se connecter, la GitHub App doit être **publique** (réglages de l'App > Advanced > "Make public"). Privée, elle répond 404 à toute personne extérieure à l'organisation.
 
 Le forum n'applique rien en cachette : c'est GitHub qui vérifie les droits de chaque action, avec le jeton de la personne connectée.
 
