@@ -75,7 +75,7 @@ Le HTTPS et le nom de domaine sont gérés par le reverse proxy. Comme pour la d
    - ajouter la Callback URL `https://forum.babouins.fr/connexion/retour` ;
    - ajouter la permission "Discussions" en lecture et écriture ;
    - ajouter ce dépôt à l'installation de l'App ;
-   - générer une clef privée, pour `GITHUB_APP_PRIVATE_KEY`.
+   - générer une clef privée, déposer le fichier `.pem` sur le serveur (par exemple `/home/container/github-app.pem`) et mettre ce chemin dans `GITHUB_APP_PRIVATE_KEY`.
 3. **Ruleset** sur `main`, comme les autres dépôts : 2 approbations, check `build` obligatoire.
 4. **Doc** : `FORUM_URL` y vaut `https://forum.babouins.fr` par défaut, rien à faire.
 

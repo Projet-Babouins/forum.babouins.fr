@@ -22,3 +22,6 @@ pnpm-debug.log*
 
 # Données du forum en développement (stockage local)
 .forum-local.json
+
+# Clef privée de la GitHub App : ne jamais la commiter
+*.pem

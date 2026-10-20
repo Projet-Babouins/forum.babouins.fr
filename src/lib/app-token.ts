@@ -1,4 +1,5 @@
 import { createSign } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { GITHUB_API_URL, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_REPO } from 'astro:env/server';
 import { ForumError } from './errors';
 
@@ -22,13 +23,22 @@ let pending: Promise<string> | null = null;
 export const isAppConfigured = () => Boolean(GITHUB_APP_ID && GITHUB_APP_PRIVATE_KEY);
 
 /**
- * Clef privée au format PEM, quelle que soit la façon dont elle a été collée dans .env :
- * retours à la ligne écrits « \n », remplacés par des espaces, ou guillemets en trop.
+ * Clef privée au format PEM. GITHUB_APP_PRIVATE_KEY peut contenir :
+ * - le chemin du fichier .pem (le plus sûr : rien à recopier, aucun souci de guillemets) ;
+ * - ou son contenu, avec les retours à la ligne écrits « \n » ou remplacés par des espaces.
  */
 function privateKey(): string {
-	const raw = (GITHUB_APP_PRIVATE_KEY ?? '').trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
+	let raw = (GITHUB_APP_PRIVATE_KEY ?? '').trim().replace(/^["']|["']$/g, '');
+	if (!raw.includes('-----BEGIN') && existsSync(raw)) raw = readFileSync(raw, 'utf8');
+	raw = raw.replace(/\\n/g, '\n');
 	const pem = raw.match(/-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/);
-	if (!pem) throw new ForumError(503, 'GITHUB_APP_PRIVATE_KEY illisible : il faut tout le fichier .pem, BEGIN et END compris.');
+	if (!pem) {
+		// Seule la longueur est écrite, jamais le contenu : c'est un secret.
+		throw new ForumError(
+			503,
+			`GITHUB_APP_PRIVATE_KEY illisible (${raw.length} caractères reçus) : mets le chemin du fichier .pem, ou tout son contenu, BEGIN et END compris.`,
+		);
+	}
 	const body = pem[2].replace(/\s+/g, '').match(/.{1,64}/g)?.join('\n');
 	return `-----BEGIN ${pem[1]}-----\n${body}\n-----END ${pem[1]}-----\n`;
 }
