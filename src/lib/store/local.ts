@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { docRefOf } from '../docs';
 import { renderMarkdown } from '../markdown';
-import type { Author, ForumStore, Kind, Reply, Topic, TopicSummary, Writer } from './types';
+import type { Author, ForumStore, Kind, Member, Reply, Topic, TopicSummary } from './types';
 
 /**
  * Stockage de développement : tout le forum dans un fichier JSON à la racine du projet
@@ -124,14 +124,14 @@ function toReply(reply: StoredReply, answerId: string | null): Reply {
 	};
 }
 
-const authorOf = ({ user }: Writer): Author => ({ login: user.login, avatar: user.avatar });
+const authorOf = ({ user }: Member): Author => ({ login: user.login, avatar: user.avatar });
 
 export const localStore: ForumStore = {
 	async list() {
 		return (await load()).map(toSummary).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 	},
 
-	async get(number) {
+	async get(_member, number) {
 		const topic = (await load()).find((candidate) => candidate.number === number);
 		if (!topic) return null;
 		return {
@@ -166,7 +166,7 @@ export const localStore: ForumStore = {
 		await save(topics);
 	},
 
-	async preview(markdown) {
+	async preview(_member, markdown) {
 		return renderMarkdown(markdown);
 	},
 };

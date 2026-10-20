@@ -8,6 +8,9 @@ export class ForumError extends Error {
 	}
 }
 
+/** Vrai si GitHub a refusé le jeton de la personne (expiré) : il faut se reconnecter. */
+export const isExpired = (error: unknown) => error instanceof ForumError && error.status === 401;
+
 /** Message lisible pour une personne, quelle que soit l'erreur. Le détail technique va dans le journal. */
 export function messageOf(error: unknown): string {
 	if (error instanceof ForumError) return error.message;

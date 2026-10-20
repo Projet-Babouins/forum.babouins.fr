@@ -2,10 +2,8 @@ import { GITHUB_API_URL } from 'astro:env/server';
 import { ForumError } from './errors';
 
 /**
- * Petit client de l'API GitHub. Deux sortes de jetons passent par ici :
- * - celui du serveur (lib/app-token.ts), en lecture seule, pour afficher le forum à tout le monde ;
- * - celui de la personne connectée, pour écrire : GitHub applique alors SES droits,
- *   et chaque sujet ou réponse est publié à son nom.
+ * Petit client de l'API GitHub, toujours avec le jeton de la personne connectée : GitHub
+ * applique SES droits, et chaque sujet ou réponse est publié à son nom.
  * Doc : https://docs.github.com/fr/graphql/guides/using-the-graphql-api-for-discussions
  */
 

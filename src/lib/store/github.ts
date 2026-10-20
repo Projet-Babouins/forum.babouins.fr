@@ -1,17 +1,17 @@
 import { GITHUB_REPO } from 'astro:env/server';
-import { appToken } from '../app-token';
 import { docRefOf } from '../docs';
 import { ForumError } from '../errors';
 import { createGitHub } from '../github';
-import type { Author, ForumStore, Kind, Reply, Topic, TopicSummary, Writer } from './types';
+import type { Author, ForumStore, Kind, Member, Reply, Topic, TopicSummary } from './types';
 
 /**
  * Le forum, ce sont les GitHub Discussions du dépôt GITHUB_REPO.
  *
- * - Lire : avec le jeton du serveur (lib/app-token.ts). La liste complète des sujets est gardée
- *   30 secondes en mémoire : une classe écrit quelques centaines de sujets, pas des millions,
- *   et tout avoir sous la main rend les filtres et la recherche immédiats.
- * - Écrire : avec le jeton de la personne connectée. GitHub vérifie ses droits et publie à son nom.
+ * Tout passe par le jeton de la personne connectée : le forum est réservé aux membres, et GitHub
+ * vérifie ses droits à chaque appel (écrire est publié à son nom).
+ * La liste complète des sujets est gardée 30 secondes en mémoire, pour tout le monde : ce sont
+ * les mêmes données pour tous les membres (un dépôt public). Une classe écrit quelques centaines
+ * de sujets : tout avoir sous la main rend les filtres et la recherche immédiats.
  *
  * Catégories : une question va dans la première catégorie « répondable » du dépôt (Q&A à la
  * création des Discussions), une discussion dans « General ». Les dossiers de la doc ne sont
@@ -123,11 +123,8 @@ function toReply(raw: RawComment): Reply {
 	};
 }
 
-/** Lecture avec le jeton du serveur. */
-const reader = async () => createGitHub(await appToken());
-
-/** Écriture avec le jeton de la personne connectée. */
-function writerClient({ token }: Writer) {
+/** Client GitHub avec le jeton de la personne connectée. */
+function client({ token }: Member) {
 	if (!token) throw new ForumError(401, 'Ta session GitHub a expiré. Reconnecte-toi.');
 	return createGitHub(token);
 }
@@ -143,8 +140,8 @@ function forget(number?: number) {
 	if (number !== undefined) topics.delete(number);
 }
 
-async function fetchList(): Promise<TopicSummary[]> {
-	const github = await reader();
+async function fetchList(member: Member): Promise<TopicSummary[]> {
+	const github = client(member);
 	const all: TopicSummary[] = [];
 	let after: string | null = null;
 	for (let page = 0; page < MAX_PAGES; page++) {
@@ -159,10 +156,10 @@ async function fetchList(): Promise<TopicSummary[]> {
 	return all;
 }
 
-async function repositoryMeta() {
+async function repositoryMeta(member: Member) {
 	if (meta && Date.now() - meta.at < META_TTL_MS) return meta;
 	type Meta = { repository: { id: string; discussionCategories: { nodes: { id: string; slug: string; isAnswerable: boolean }[] } } };
-	const { repository } = await (await reader()).graphql<Meta>(META_QUERY, { owner, name });
+	const { repository } = await client(member).graphql<Meta>(META_QUERY, { owner, name });
 	const categories = repository.discussionCategories.nodes;
 	const question = categories.find((category) => category.isAnswerable);
 	const discussion =
@@ -176,17 +173,17 @@ async function repositoryMeta() {
 }
 
 export const githubStore: ForumStore = {
-	async list() {
+	async list(member) {
 		if (list && Date.now() - list.at < LIST_TTL_MS) return list.topics;
-		listPending ??= fetchList().finally(() => (listPending = null));
+		listPending ??= fetchList(member).finally(() => (listPending = null));
 		return listPending;
 	},
 
-	async get(number) {
+	async get(member, number) {
 		const hit = topics.get(number);
 		if (hit && Date.now() - hit.at < TOPIC_TTL_MS) return hit.topic;
 		type Data = { repository: { discussion: RawTopic | null } };
-		const { repository } = await (await reader()).graphql<Data>(TOPIC_QUERY, { owner, name, number });
+		const { repository } = await client(member).graphql<Data>(TOPIC_QUERY, { owner, name, number });
 		const raw = repository.discussion;
 		const topic: Topic | null = raw && {
 			...toSummary(raw, raw.comments.totalCount),
@@ -198,10 +195,10 @@ export const githubStore: ForumStore = {
 		return topic;
 	},
 
-	async create(writer, { kind, title, body }) {
-		const { repositoryId, question, discussion } = await repositoryMeta();
+	async create(member, { kind, title, body }) {
+		const { repositoryId, question, discussion } = await repositoryMeta(member);
 		type Data = { createDiscussion: { discussion: { number: number } } };
-		const data = await writerClient(writer).graphql<Data>(
+		const data = await client(member).graphql<Data>(
 			`mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
 				createDiscussion(input: { repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body }) {
 					discussion { number }
@@ -213,8 +210,8 @@ export const githubStore: ForumStore = {
 		return data.createDiscussion.discussion.number;
 	},
 
-	async reply(writer, topic, body, replyTo) {
-		await writerClient(writer).graphql(
+	async reply(member, topic, body, replyTo) {
+		await client(member).graphql(
 			`mutation($discussionId: ID!, $body: String!, $replyToId: ID) {
 				addDiscussionComment(input: { discussionId: $discussionId, body: $body, replyToId: $replyToId }) { comment { id } }
 			}`,
@@ -223,15 +220,15 @@ export const githubStore: ForumStore = {
 		forget(topic.number);
 	},
 
-	async markAnswer(writer, topic, replyId) {
-		await writerClient(writer).graphql(
+	async markAnswer(member, topic, replyId) {
+		await client(member).graphql(
 			`mutation($id: ID!) { markDiscussionCommentAsAnswer(input: { id: $id }) { discussion { id } } }`,
 			{ id: replyId },
 		);
 		forget(topic.number);
 	},
 
-	async preview(markdown) {
-		return (await reader()).markdown(markdown, GITHUB_REPO);
+	async preview(member, markdown) {
+		return client(member).markdown(markdown, GITHUB_REPO);
 	},
 };

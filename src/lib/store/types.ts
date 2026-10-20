@@ -63,23 +63,26 @@ export interface NewTopic {
 	doc: string | null;
 }
 
-/** Qui écrit : la personne connectée, avec son jeton GitHub (absent en stockage local). */
-export interface Writer {
+/**
+ * Qui lit ou écrit : la personne connectée, avec son jeton GitHub (absent en stockage local).
+ * Le forum est réservé aux membres : même la lecture passe par son jeton.
+ */
+export interface Member {
 	user: ForumUser;
 	token?: string;
 }
 
 export interface ForumStore {
 	/** Tous les sujets, du plus récemment actif au plus ancien. */
-	list(): Promise<TopicSummary[]>;
+	list(member: Member): Promise<TopicSummary[]>;
 	/** Un sujet avec ses réponses ; `null` s'il n'existe pas. */
-	get(number: number): Promise<Topic | null>;
+	get(member: Member, number: number): Promise<Topic | null>;
 	/** Crée un sujet et renvoie son numéro. */
-	create(writer: Writer, topic: NewTopic): Promise<number>;
+	create(member: Member, topic: NewTopic): Promise<number>;
 	/** Répond à un sujet, ou à une réponse (`replyTo`). */
-	reply(writer: Writer, topic: Topic, body: string, replyTo?: string): Promise<void>;
+	reply(member: Member, topic: Topic, body: string, replyTo?: string): Promise<void>;
 	/** Choisit la réponse qui résout une question. */
-	markAnswer(writer: Writer, topic: Topic, replyId: string): Promise<void>;
+	markAnswer(member: Member, topic: Topic, replyId: string): Promise<void>;
 	/** Aperçu d'un message, rendu comme il sera publié. */
-	preview(markdown: string): Promise<string>;
+	preview(member: Member, markdown: string): Promise<string>;
 }

@@ -3,17 +3,18 @@
 import Layout from '../layouts/Layout.astro';
 import TopicRow from '../components/TopicRow.astro';
 import { docPageUrl, docsIndex } from '../lib/docs';
-import { messageOf } from '../lib/errors';
+import { isExpired, messageOf } from '../lib/errors';
 import { search, type SearchResults } from '../lib/search';
-import { forum } from '../lib/store';
+import { forum, memberOf } from '../lib/store';
 
 const query = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 const index = await docsIndex();
 let results: SearchResults = { docs: [], topics: [] };
 let error = '';
 try {
-	results = search(query, index, await forum().list());
+	results = search(query, index, await forum().list(memberOf(Astro.locals)));
 } catch (caught) {
+	if (isExpired(caught)) return Astro.redirect(`/connexion?retour=${encodeURIComponent(Astro.url.pathname + Astro.url.search)}`);
 	error = messageOf(caught);
 }
 const ask = `/nouveau?titre=${encodeURIComponent(query)}`;

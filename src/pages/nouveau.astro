@@ -5,7 +5,7 @@ import Layout from '../layouts/Layout.astro';
 import Composer from '../components/Composer.astro';
 import { describeDoc, docMarker, docsIndex, isValidDocId, type DocNode } from '../lib/docs';
 import { ForumError, messageOf } from '../lib/errors';
-import { forum, type Kind } from '../lib/store';
+import { forum, memberOf, type Kind } from '../lib/store';
 
 const index = await docsIndex();
 const params = Astro.url.searchParams;
@@ -29,7 +29,7 @@ if (Astro.request.method === 'POST') {
 		if (body.length > 20_000) throw new ForumError(400, 'Le message est trop long (20 000 caractères au plus).');
 		if (doc && !(isValidDocId(doc) && describeDoc(index, doc))) throw new ForumError(400, "Ce thème n'existe pas dans la doc.");
 		const number = await forum().create(
-			{ user: Astro.locals.user!, token: Astro.locals.githubToken },
+			memberOf(Astro.locals),
 			{ kind, title, doc: doc || null, body: doc ? body + docMarker(doc) : body },
 		);
 		return Astro.redirect(`/sujet/${number}`, 303);

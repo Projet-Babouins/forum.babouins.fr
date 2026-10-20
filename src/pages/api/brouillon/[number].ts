@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { docsIndex, withoutMarker } from '../../../lib/docs';
 import { ForumError } from '../../../lib/errors';
-import { forumOrigin, publicJson, topicNumber } from '../../../lib/http';
-import { forum, type Reply } from '../../../lib/store';
+import { forumOrigin, docsJson, topicNumber } from '../../../lib/http';
+import { forum, memberOf, type Reply } from '../../../lib/store';
 
 /**
  * Brouillon de page de doc tiré d'un sujet : le bouton « Transformer en page de doc » ouvre
@@ -12,9 +12,9 @@ import { forum, type Reply } from '../../../lib/store';
  * relecture à deux, comme n'importe quelle page. Il contient la solution choisie, sinon
  * toutes les réponses, et cite toujours le sujet d'origine et ses auteurs.
  */
-export const GET: APIRoute = ({ params, url }) =>
-	publicJson(async () => {
-		const topic = await forum().get(topicNumber(params.number));
+export const GET: APIRoute = ({ params, url, locals }) =>
+	docsJson(async () => {
+		const topic = await forum().get(memberOf(locals), topicNumber(params.number));
 		if (!topic) throw new ForumError(404, 'Sujet introuvable.');
 
 		const visible = topic.comments.filter((reply) => !reply.hidden && reply.body.trim());

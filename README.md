@@ -13,8 +13,8 @@ Bienvenue sur le dépôt de [forum.babouins.fr](https://forum.babouins.fr), le f
 
 Le forum n'a pas de base de données : **ses messages sont les GitHub Discussions de ce dépôt**. Le site n'en est que la vitrine, plus simple à lire, et reliée à la doc. Conséquences :
 
-- tout le monde lit, sans compte ;
-- pour écrire, on se connecte avec son compte GitHub. Le message part sur GitHub **à son nom** ;
+- le forum est **réservé aux membres** : on se connecte avec son compte GitHub, même pour lire ;
+- le forum lit et écrit avec le jeton de la personne connectée : un message part sur GitHub **à son nom**, et le serveur n'a aucun jeton à lui ;
 - la modération, l'historique et les sauvegardes sont ceux de GitHub ;
 - un message écrit directement sur github.com apparaît aussi sur le forum.
 
@@ -31,7 +31,7 @@ Comment ça marche :
 
 1. À chaque build, la doc publie son index : [docs.babouins.fr/pages.json](https://docs.babouins.fr/pages.json) (arbre du menu, titre et texte de chaque page). Le forum le relit toutes les 5 minutes.
 2. Un sujet est relié à une page ou à un dossier par un repère invisible à la fin de son message : `<!-- babouins:doc=sisr/linux/droits-linux -->`. Un sujet ouvert sur github.com n'en a pas : on prend alors le premier lien vers une page de la doc qu'il contient.
-3. La doc interroge le forum depuis le navigateur, sur trois adresses publiques en JSON : `/api/sujets?doc=…`, `/api/recherche?q=…` et `/api/brouillon/<numéro>`. Elles ne renvoient que ce que tout le monde peut déjà lire.
+3. La doc interroge le forum depuis le navigateur, sur trois adresses en JSON : `/api/sujets?doc=…`, `/api/recherche?q=…` et `/api/brouillon/<numéro>`. Elle envoie le cookie de session du forum (les deux sites sont sur `babouins.fr`) : un membre connecté au forum voit les questions dans la doc ; sinon, la doc propose de se connecter au forum.
 
 ### ✅ Qui peut faire quoi ?
 
@@ -39,7 +39,7 @@ Une seule source de vérité pour toute la plateforme : **le rôle sur le dépô
 
 | Rôle sur docs.babouins.fr | Sur le forum |
 | --- | --- |
-| Aucun | Lire |
+| Aucun | Rien : la connexion est refusée |
 | "Write" (membre) | Lire, poser une question, répondre, choisir la solution de **ses** questions |
 | "Maintain" ou "Admin" (référent) | En plus : choisir la solution de n'importe quelle question |
 
@@ -61,8 +61,7 @@ npm start
 | --- | --- |
 | `HOST` | Mettre `0.0.0.0` pour être joignable depuis l'extérieur |
 | `PORT` | Le port attribué par Pelican |
-| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | La GitHub App de la doc, pour la connexion |
-| `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | La même App, pour que le serveur puisse **lire** les Discussions |
+| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | La GitHub App de la doc, pour la connexion (les mêmes valeurs que la doc) |
 
 Le HTTPS et le nom de domaine sont gérés par le reverse proxy. Comme pour la doc, tout ce qui a besoin de la vraie adresse la lit dans `site`, dans `astro.config.mjs`.
 
@@ -74,8 +73,7 @@ Le HTTPS et le nom de domaine sont gérés par le reverse proxy. Comme pour la d
 2. **GitHub App** : réutiliser celle de la doc (voir `.env.example`) :
    - ajouter la Callback URL `https://forum.babouins.fr/connexion/retour` ;
    - ajouter la permission "Discussions" en lecture et écriture ;
-   - ajouter ce dépôt à l'installation de l'App ;
-   - générer une clef privée, déposer le fichier `.pem` sur le serveur (par exemple `/home/container/github-app.pem`) et mettre ce chemin dans `GITHUB_APP_PRIVATE_KEY`.
+   - ajouter ce dépôt à l'installation de l'App.
 3. **Ruleset** sur `main`, comme les autres dépôts : 2 approbations, check `build` obligatoire.
 4. **Doc** : `FORUM_URL` y vaut `https://forum.babouins.fr` par défaut, rien à faire.
 
@@ -108,7 +106,7 @@ Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. 
 ```text
 .
 ├── src/
-│   ├── middleware.ts            Contrôle d'accès unique : écrire exige une session et une requête venue du forum
+│   ├── middleware.ts            Contrôle d'accès unique : tout exige une session ; écrire, une requête venue du forum
 │   ├── pages/
 │   │   ├── index.astro          Les sujets, filtrables par thème de la doc, type et état
 │   │   ├── sujet/[number].astro Un sujet et ses réponses ; traite aussi « répondre » et « c'est la solution »
@@ -120,7 +118,6 @@ Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. 
 │   │   ├── docs.ts              Le lien avec la doc : son index, le repère d'un sujet
 │   │   ├── search.ts            La recherche commune
 │   │   ├── oauth.ts             Connexion via GitHub, rôle d'après le dépôt de la doc
-│   │   ├── app-token.ts         Jeton de lecture du serveur (GitHub App, 1 heure, lecture seule)
 │   │   ├── github.ts            Petit client de l'API GitHub (REST et GraphQL)
 │   │   ├── markdown.ts          Rendu des messages en stockage local (en production, c'est GitHub)
 │   │   └── store/               Où vivent les sujets : github.ts (Discussions) ou local.ts (fichier)
@@ -132,7 +129,7 @@ Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. 
 ### 🔒 Les règles de sécurité du code
 
 - **Le serveur décide, GitHub juge.** Chaque écriture part avec le jeton de la personne connectée : GitHub applique ses droits. Le forum ne fait que cacher les boutons inutiles.
-- **Deux jetons, aucun durable.** Celui de la personne (8 heures, dans la session côté serveur) pour écrire ; celui du serveur (1 heure, lecture seule, ce dépôt seulement) pour lire. Aucun n'est envoyé au navigateur ni écrit dans un journal.
+- **Un seul jeton, jamais durable** : celui de la personne connectée (8 heures, dans la session côté serveur), pour lire comme pour écrire. Il n'est jamais envoyé au navigateur ni écrit dans un journal. Le serveur n'a aucun jeton à lui.
 - **CSRF** : toute requête POST doit porter l'en-tête `Origin` du forum (`src/middleware.ts`).
 - **HTML des messages** : rendu et nettoyé par GitHub (`bodyHTML`), affiché tel quel. En local, `lib/markdown.ts` affiche le HTML comme du texte.
 - **Redirections** : après la connexion, on ne revient que sur une adresse du forum (`safeReturnTo`).

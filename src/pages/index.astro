@@ -4,8 +4,8 @@ import Layout from '../layouts/Layout.astro';
 import DocTree from '../components/DocTree.astro';
 import TopicRow from '../components/TopicRow.astro';
 import { describeDoc, docsIndex, isValidDocId, isWithin } from '../lib/docs';
-import { messageOf } from '../lib/errors';
-import { forum, type TopicSummary } from '../lib/store';
+import { isExpired, messageOf } from '../lib/errors';
+import { forum, memberOf, type TopicSummary } from '../lib/store';
 
 const STEP = 30;
 const params = Astro.url.searchParams;
@@ -18,8 +18,9 @@ const index = await docsIndex();
 let all: TopicSummary[] = [];
 let error = '';
 try {
-	all = await forum().list();
+	all = await forum().list(memberOf(Astro.locals));
 } catch (caught) {
+	if (isExpired(caught)) return Astro.redirect(`/connexion?retour=${encodeURIComponent(Astro.url.pathname + Astro.url.search)}`);
 	error = messageOf(caught);
 }
 

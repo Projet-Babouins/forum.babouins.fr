@@ -56,11 +56,9 @@ export default defineConfig({
 			// Adresses de GitHub. À changer seulement pour des essais contre un faux GitHub.
 			GITHUB_URL: envField.string({ context: 'server', access: 'public', default: 'https://github.com' }),
 			GITHUB_API_URL: envField.string({ context: 'server', access: 'public', default: 'https://api.github.com' }),
-			// La GitHub App de la doc, qui sert aussi au forum (voir .env.example).
+			// La GitHub App de la doc, qui sert aussi au forum : connexion des membres (voir .env.example).
 			OAUTH_CLIENT_ID: envField.string({ context: 'server', access: 'secret', optional: true }),
 			OAUTH_CLIENT_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
-			GITHUB_APP_ID: envField.string({ context: 'server', access: 'secret', optional: true }),
-			GITHUB_APP_PRIVATE_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
 			// Développement uniquement : connecte directement ce login, sans passer par GitHub.
 			FORUM_DEV_LOGIN: envField.string({ context: 'server', access: 'secret', optional: true }),
 			// Développement uniquement : `github` pour essayer les vraies Discussions au lieu du fichier local.

@@ -5,19 +5,21 @@ import Layout from '../../layouts/Layout.astro';
 import Composer from '../../components/Composer.astro';
 import DocChip from '../../components/DocChip.astro';
 import { describeDoc, docEditorUrl, docsIndex, isWithin } from '../../lib/docs';
-import { ForumError, messageOf } from '../../lib/errors';
+import { ForumError, isExpired, messageOf } from '../../lib/errors';
 import { ago, fullDate, plural } from '../../lib/format';
 import { topicNumber } from '../../lib/http';
-import { forum, isLocalMode, type Reply, type Topic, type Writer } from '../../lib/store';
+import { forum, isLocalMode, memberOf, type Reply, type Topic } from '../../lib/store';
 
-const user = Astro.locals.user;
+const user = Astro.locals.user!;
+const member = memberOf(Astro.locals);
 const store = forum();
 
 let topic: Topic | null = null;
 let loadError = '';
 try {
-	topic = await store.get(topicNumber(Astro.params.number));
+	topic = await store.get(member, topicNumber(Astro.params.number));
 } catch (caught) {
+	if (isExpired(caught)) return Astro.redirect(`/connexion?retour=${encodeURIComponent(Astro.url.pathname + Astro.url.search)}`);
 	if (!(caught instanceof ForumError && caught.status === 404)) loadError = messageOf(caught);
 }
 if (!topic && !loadError) return Astro.rewrite('/404');
@@ -30,9 +32,8 @@ let draftFor = '';
 const canChooseAnswer = (current: Topic) =>
 	current.kind === 'question' && !!user && (user.role === 'referent' || user.login === current.author?.login);
 
-if (topic && Astro.request.method === 'POST' && user) {
+if (topic && Astro.request.method === 'POST') {
 	const form = await Astro.request.formData();
-	const writer: Writer = { user, token: Astro.locals.githubToken };
 	const intent = String(form.get('intent'));
 	try {
 		if (intent === 'reply') {
@@ -41,14 +42,14 @@ if (topic && Astro.request.method === 'POST' && user) {
 			if (draft.length < 2) throw new ForumError(400, 'Ta réponse est vide.');
 			if (draft.length > 20_000) throw new ForumError(400, 'Ta réponse est trop longue (20 000 caractères au plus).');
 			if (draftFor && !topic.comments.some((comment) => comment.id === draftFor)) throw new ForumError(400, 'Cette réponse n’existe plus.');
-			await store.reply(writer, topic, draft, draftFor || undefined);
+			await store.reply(member, topic, draft, draftFor || undefined);
 			return Astro.redirect(`/sujet/${topic.number}#fin`, 303);
 		}
 		if (intent === 'answer') {
 			const replyId = String(form.get('replyId'));
 			if (!canChooseAnswer(topic)) throw new ForumError(403, "Seul l'auteur de la question (ou un référent) choisit la solution.");
 			if (!topic.comments.some((comment) => comment.id === replyId)) throw new ForumError(400, 'Cette réponse n’existe plus.');
-			await store.markAnswer(writer, topic, replyId);
+			await store.markAnswer(member, topic, replyId);
 			return Astro.redirect(`/sujet/${topic.number}#r-${replyId}`, 303);
 		}
 		throw new ForumError(400, 'Action inconnue.');
@@ -63,7 +64,7 @@ const index = await docsIndex();
 const doc = topic ? describeDoc(index, topic.doc) : null;
 const page = doc?.kind === 'page' ? index.pages.get(doc.id) : undefined;
 const related = topic?.doc
-	? (await store.list()).filter((other) => other.number !== topic.number && isWithin(other.doc, topic.doc!)).slice(0, 5)
+	? (await store.list(member)).filter((other) => other.number !== topic.number && isWithin(other.doc, topic.doc!)).slice(0, 5)
 	: [];
 const answer = topic?.comments.find((comment) => comment.isAnswer);
 const hasReplies = !!topic?.comments.some((comment) => !comment.hidden);
