@@ -21,14 +21,30 @@ let pending: Promise<string> | null = null;
 
 export const isAppConfigured = () => Boolean(GITHUB_APP_ID && GITHUB_APP_PRIVATE_KEY);
 
+/**
+ * Clef privée au format PEM, quelle que soit la façon dont elle a été collée dans .env :
+ * retours à la ligne écrits « \n », remplacés par des espaces, ou guillemets en trop.
+ */
+function privateKey(): string {
+	const raw = (GITHUB_APP_PRIVATE_KEY ?? '').trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
+	const pem = raw.match(/-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/);
+	if (!pem) throw new ForumError(503, 'GITHUB_APP_PRIVATE_KEY illisible : il faut tout le fichier .pem, BEGIN et END compris.');
+	const body = pem[2].replace(/\s+/g, '').match(/.{1,64}/g)?.join('\n');
+	return `-----BEGIN ${pem[1]}-----\n${body}\n-----END ${pem[1]}-----\n`;
+}
+
 /** JWT de l'App, valable 9 minutes (GitHub refuse plus de 10). */
 function appJwt(): string {
 	const now = Math.floor(Date.now() / 1000);
 	const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 	const unsigned = `${part({ alg: 'RS256', typ: 'JWT' })}.${part({ iat: now - 60, exp: now + 540, iss: GITHUB_APP_ID })}`;
-	// Dans .env, la clef tient sur une ligne : les retours à la ligne y sont écrits « \n ».
-	const key = (GITHUB_APP_PRIVATE_KEY ?? '').replace(/\\n/g, '\n');
-	return `${unsigned}.${createSign('RSA-SHA256').update(unsigned).sign(key, 'base64url')}`;
+	try {
+		return `${unsigned}.${createSign('RSA-SHA256').update(unsigned).sign(privateKey(), 'base64url')}`;
+	} catch (error) {
+		if (error instanceof ForumError) throw error;
+		console.error(error);
+		throw new ForumError(503, 'GITHUB_APP_PRIVATE_KEY refusée : vérifie que c’est bien la clef privée de la GitHub App.');
+	}
 }
 
 async function appCall<T>(method: string, path: string, body?: unknown): Promise<T> {
