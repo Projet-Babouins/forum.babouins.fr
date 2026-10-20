@@ -1,0 +1,385 @@
+---
+// Un sujet : le message, les réponses (et réponses aux réponses), le lien avec la doc.
+// La page traite aussi ses propres formulaires (POST) : répondre, choisir la solution.
+import Layout from '../../layouts/Layout.astro';
+import Composer from '../../components/Composer.astro';
+import DocChip from '../../components/DocChip.astro';
+import { describeDoc, docEditorUrl, docsIndex, isWithin } from '../../lib/docs';
+import { ForumError, messageOf } from '../../lib/errors';
+import { ago, fullDate, plural } from '../../lib/format';
+import { topicNumber } from '../../lib/http';
+import { forum, isLocalMode, type Reply, type Topic, type Writer } from '../../lib/store';
+
+const user = Astro.locals.user;
+const store = forum();
+
+let topic: Topic | null = null;
+let loadError = '';
+try {
+	topic = await store.get(topicNumber(Astro.params.number));
+} catch (caught) {
+	if (!(caught instanceof ForumError && caught.status === 404)) loadError = messageOf(caught);
+}
+if (!topic && !loadError) return Astro.rewrite('/404');
+
+// --- Formulaires ------------------------------------------------------------------
+let formError = '';
+let draft = '';
+let draftFor = '';
+
+const canChooseAnswer = (current: Topic) =>
+	current.kind === 'question' && !!user && (user.role === 'referent' || user.login === current.author?.login);
+
+if (topic && Astro.request.method === 'POST' && user) {
+	const form = await Astro.request.formData();
+	const writer: Writer = { user, token: Astro.locals.githubToken };
+	const intent = String(form.get('intent'));
+	try {
+		if (intent === 'reply') {
+			draft = String(form.get('body') ?? '').trim();
+			draftFor = String(form.get('replyTo') ?? '');
+			if (draft.length < 2) throw new ForumError(400, 'Ta réponse est vide.');
+			if (draft.length > 20_000) throw new ForumError(400, 'Ta réponse est trop longue (20 000 caractères au plus).');
+			if (draftFor && !topic.comments.some((comment) => comment.id === draftFor)) throw new ForumError(400, 'Cette réponse n’existe plus.');
+			await store.reply(writer, topic, draft, draftFor || undefined);
+			return Astro.redirect(`/sujet/${topic.number}#fin`, 303);
+		}
+		if (intent === 'answer') {
+			const replyId = String(form.get('replyId'));
+			if (!canChooseAnswer(topic)) throw new ForumError(403, "Seul l'auteur de la question (ou un référent) choisit la solution.");
+			if (!topic.comments.some((comment) => comment.id === replyId)) throw new ForumError(400, 'Cette réponse n’existe plus.');
+			await store.markAnswer(writer, topic, replyId);
+			return Astro.redirect(`/sujet/${topic.number}#r-${replyId}`, 303);
+		}
+		throw new ForumError(400, 'Action inconnue.');
+	} catch (caught) {
+		formError = messageOf(caught);
+		Astro.response.status = caught instanceof ForumError ? caught.status : 502;
+	}
+}
+
+// --- Liens avec la doc ------------------------------------------------------------
+const index = await docsIndex();
+const doc = topic ? describeDoc(index, topic.doc) : null;
+const page = doc?.kind === 'page' ? index.pages.get(doc.id) : undefined;
+const related = topic?.doc
+	? (await store.list()).filter((other) => other.number !== topic.number && isWithin(other.doc, topic.doc!)).slice(0, 5)
+	: [];
+const answer = topic?.comments.find((comment) => comment.isAnswer);
+const hasReplies = !!topic?.comments.some((comment) => !comment.hidden);
+const here = Astro.url.pathname;
+const loginHref = `/connexion?retour=${encodeURIComponent(here)}`;
+const authorName = (reply: { author: Reply['author'] }) => reply.author?.login ?? 'Compte supprimé';
+---
+
+<Layout title={topic?.title ?? 'Sujet'} description={topic ? `${topic.kind === 'question' ? 'Question' : 'Discussion'} sur le forum Babouins.` : undefined}>
+	{loadError && <p class="alert" role="alert">{loadError}</p>}
+	{
+		topic && (
+			<div class="with-aside">
+				<article>
+					<p class="tags">
+						<a href="/" class="back">← Sujets</a>
+						<span class="badge">{topic.kind === 'question' ? 'Question' : 'Discussion'}</span>
+						{topic.answered && <span class="badge solved">Résolue</span>}
+						{topic.closed && <span class="badge">Fermé</span>}
+						{doc && <DocChip link={doc} />}
+					</p>
+					<h1>{topic.title}</h1>
+
+					<ol class="thread">
+						<li class="post first">
+							<header class="who">
+								<img class="avatar" src={topic.author?.avatar || '/favicon.png'} alt="" width="32" height="32" />
+								<strong>{authorName(topic)}</strong>
+								<time class="muted small" datetime={topic.createdAt} title={fullDate(topic.createdAt)}>{ago(topic.createdAt)}</time>
+							</header>
+							<div class="rendered" set:html={topic.html} />
+						</li>
+
+						{answer && (
+							<li class="jump">
+								<a href={`#r-${answer.id}`}>Aller à la solution de {authorName(answer)}</a>
+							</li>
+						)}
+
+						{topic.comments.map((comment) => (
+							<li class:list={['post', { solution: comment.isAnswer }]} id={`r-${comment.id}`}>
+								<header class="who">
+									<img class="avatar" src={comment.author?.avatar || '/favicon.png'} alt="" width="32" height="32" />
+									<strong>{authorName(comment)}</strong>
+									<time class="muted small" datetime={comment.createdAt} title={fullDate(comment.createdAt)}>{ago(comment.createdAt)}</time>
+									{comment.isAnswer && <span class="badge solved">Solution</span>}
+								</header>
+								{comment.hidden ? (
+									<p class="muted">Message masqué par la modération.</p>
+								) : (
+									<div class="rendered" set:html={comment.html} />
+								)}
+
+								{comment.replies.length > 0 && (
+									<ol class="replies">
+										{comment.replies.map((reply) => (
+											<li class="post reply" id={`r-${reply.id}`}>
+												<header class="who">
+													<img class="avatar" src={reply.author?.avatar || '/favicon.png'} alt="" width="24" height="24" />
+													<strong>{authorName(reply)}</strong>
+													<time class="muted small" datetime={reply.createdAt} title={fullDate(reply.createdAt)}>{ago(reply.createdAt)}</time>
+												</header>
+												{reply.hidden ? <p class="muted">Message masqué par la modération.</p> : <div class="rendered" set:html={reply.html} />}
+											</li>
+										))}
+									</ol>
+								)}
+
+								{user && !topic.closed && (
+									<div class="actions">
+										<details open={draftFor === comment.id}>
+											<summary class="link-button small">Répondre à ce message</summary>
+											<form method="post" class="reply-form">
+												<input type="hidden" name="intent" value="reply" />
+												<input type="hidden" name="replyTo" value={comment.id} />
+												{formError && draftFor === comment.id && <p class="alert" role="alert">{formError}</p>}
+												<Composer label={`Ta réponse à ${authorName(comment)}`} value={draftFor === comment.id ? draft : ''} rows={4} />
+												<button class="button small" type="submit">Publier</button>
+											</form>
+										</details>
+										{canChooseAnswer(topic) && !comment.isAnswer && !comment.hidden && (
+											<form method="post">
+												<input type="hidden" name="intent" value="answer" />
+												<input type="hidden" name="replyId" value={comment.id} />
+												<button class="button small" type="submit">C'est la solution</button>
+											</form>
+										)}
+									</div>
+								)}
+							</li>
+						))}
+					</ol>
+
+					<section id="fin" class="answer-box" aria-labelledby="repondre">
+						<h2 id="repondre">{topic.kind === 'question' ? 'Ta réponse' : 'Participer'}</h2>
+						{topic.closed ? (
+							<p class="muted">Ce sujet est fermé.</p>
+						) : user ? (
+							<form method="post">
+								<input type="hidden" name="intent" value="reply" />
+								{formError && !draftFor && <p class="alert" role="alert">{formError}</p>}
+								<Composer label="Message" value={draftFor ? '' : draft} placeholder="Explique ta solution, avec les commandes si besoin." />
+								<p>
+									<button class="button primary" type="submit">Publier la réponse</button>
+								</p>
+							</form>
+						) : (
+							<p>
+								<a class="button primary" href={loginHref}>Se connecter pour répondre</a>
+								<span class="muted small"> Avec ton compte GitHub de la classe.</span>
+							</p>
+						)}
+					</section>
+				</article>
+
+				<aside aria-label="Dans la doc">
+					{doc && (
+						<section class="box">
+							<p class="kicker">Dans la doc</p>
+							{page ? (
+								<>
+									<h2><a href={doc.href}>{page.title}</a></h2>
+									{page.description && <p class="muted small">{page.description}</p>}
+									<a class="button small" href={doc.href}>Lire la page</a>
+								</>
+							) : (
+								<p>
+									Dossier <a href={doc.href}>{doc.label}</a>
+								</p>
+							)}
+						</section>
+					)}
+
+					{user && hasReplies && (
+						<section class="box">
+							<p class="kicker">Garder la réponse</p>
+							<p class="small">
+								{answer ? 'La solution' : 'Les réponses'} méritent une place dans la doc ?{' '}
+								{page ? 'Ajoute-les à la page, ' : 'Fais-en une page, '}
+								l'éditeur s'ouvre avec un brouillon, puis la relecture à deux fait le reste.
+							</p>
+							{isLocalMode() && <p class="muted small">En local, lance aussi la doc pour essayer.</p>}
+							<a class="button small" href={docEditorUrl(topic.number)}>{page ? 'Compléter la page' : 'Transformer en page de doc'}</a>
+						</section>
+					)}
+
+					{related.length > 0 && (
+						<section class="box">
+							<p class="kicker">Sur le même thème</p>
+							<ul class="related">
+								{related.map((other) => (
+									<li>
+										<a href={`/sujet/${other.number}`}>{other.title}</a>
+										<span class="muted small"> · {other.answered ? 'résolue' : plural(other.replies, 'réponse', 'réponses')}</span>
+									</li>
+								))}
+							</ul>
+						</section>
+					)}
+
+					<p class="small muted">
+						<a href={topic.url}>{isLocalMode() ? 'Adresse du sujet' : 'Voir sur GitHub'}</a> · {plural(topic.replies, 'réponse', 'réponses')}
+					</p>
+				</aside>
+			</div>
+		)
+	}
+</Layout>
+
+<style>
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	.back {
+		margin-right: var(--space-sm);
+		font-size: var(--text-sm);
+	}
+
+	h1 {
+		margin-bottom: var(--space-lg);
+	}
+
+	/* Le fil : la piste de la vitrine relie la question à ses réponses (ligne de points). */
+	.thread {
+		position: relative;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.thread::before {
+		content: '';
+		position: absolute;
+		top: 1rem;
+		bottom: 1rem;
+		left: 15px;
+		width: 4px;
+		background: var(--piste-y);
+	}
+
+	.post {
+		position: relative;
+		margin-bottom: var(--space-lg);
+		padding: var(--space-md) var(--space-lg);
+		margin-left: 2.75rem;
+		background: var(--color-surface);
+		border: var(--rule);
+		border-radius: var(--radius);
+	}
+
+	.post.first {
+		margin-left: 0;
+		border-color: var(--color-accent);
+		z-index: 1;
+	}
+
+	.post.solution {
+		border: 2px solid var(--color-solved);
+	}
+
+	.who {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-sm);
+	}
+
+	.jump {
+		margin: 0 0 var(--space-lg) 2.75rem;
+		font-size: var(--text-sm);
+	}
+
+	.replies {
+		margin: var(--space-md) 0 0;
+		padding: 0 0 0 var(--space-md);
+		border-left: 2px solid var(--color-rule);
+		list-style: none;
+	}
+
+	.post.reply {
+		margin: 0 0 var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		background: var(--color-bg-alt);
+		border: 0;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: start;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		margin-top: var(--space-md);
+	}
+
+	.actions details {
+		flex: 1 1 18rem;
+	}
+
+	.actions summary {
+		list-style: none;
+	}
+
+	.actions summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.reply-form {
+		display: grid;
+		gap: var(--space-sm);
+		justify-items: start;
+		margin-top: var(--space-sm);
+	}
+
+	.reply-form :global(.composer) {
+		width: 100%;
+	}
+
+	.answer-box {
+		margin-top: var(--space-xl);
+		padding-top: var(--space-lg);
+		border-top: var(--rule);
+	}
+
+	.answer-box h2 {
+		font-size: var(--text-xl);
+	}
+
+	.box {
+		margin-bottom: var(--space-lg);
+		padding: var(--space-md);
+		border: var(--rule);
+		border-radius: var(--radius);
+	}
+
+	.box h2 {
+		margin-bottom: var(--space-sm);
+		font-size: var(--text-lg);
+	}
+
+	.box h2 a {
+		color: var(--color-ink);
+	}
+
+	.related {
+		margin: 0;
+		padding-left: var(--space-md);
+		font-size: var(--text-sm);
+	}
+
+	.related li {
+		margin-bottom: var(--space-sm);
+	}
+</style>

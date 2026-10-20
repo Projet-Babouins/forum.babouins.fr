@@ -1,0 +1,117 @@
+---
+// Recherche commune : la doc à gauche, le forum à droite. Rien trouvé ? On propose de poser la question.
+import Layout from '../layouts/Layout.astro';
+import TopicRow from '../components/TopicRow.astro';
+import { docPageUrl, docsIndex } from '../lib/docs';
+import { messageOf } from '../lib/errors';
+import { search, type SearchResults } from '../lib/search';
+import { forum } from '../lib/store';
+
+const query = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
+const index = await docsIndex();
+let results: SearchResults = { docs: [], topics: [] };
+let error = '';
+try {
+	results = search(query, index, await forum().list());
+} catch (caught) {
+	error = messageOf(caught);
+}
+const ask = `/nouveau?titre=${encodeURIComponent(query)}`;
+---
+
+<Layout title={query ? `Recherche : ${query}` : 'Recherche'} noindex>
+	<h1>{query ? `« ${query} »` : 'Recherche'}</h1>
+	<form action="/recherche" role="search" class="again">
+		<label for="q" class="visually-hidden">Chercher dans la doc et le forum</label>
+		<input id="q" type="search" name="q" value={query} placeholder="Une commande, un message d'erreur, une notion…" />
+		<button class="button" type="submit">Chercher</button>
+	</form>
+	{error && <p class="alert" role="alert">{error}</p>}
+
+	{
+		query && (
+			<div class="columns">
+				<section aria-labelledby="dans-la-doc">
+					<h2 id="dans-la-doc">Dans la doc <span class="muted">{results.docs.length}</span></h2>
+					{results.docs.length ? (
+						<ul class="docs">
+							{results.docs.map((page) => (
+								<li>
+									<a href={docPageUrl(page.id)}>{page.title}</a>
+									<p class="muted small">{page.excerpt}</p>
+								</li>
+							))}
+						</ul>
+					) : (
+						<p class="muted">Aucune page ne parle de ça… pour l'instant.</p>
+					)}
+				</section>
+
+				<section aria-labelledby="sur-le-forum">
+					<h2 id="sur-le-forum">Sur le forum <span class="muted">{results.topics.length}</span></h2>
+					{results.topics.length > 0 && (
+						<ul class="topics">
+							{results.topics.map((topic) => (
+								<TopicRow topic={topic} index={index} excerpt={topic.excerpt} />
+							))}
+						</ul>
+					)}
+					<div class="ask">
+						<p>{results.topics.length ? 'Pas ce que tu cherches ?' : 'Personne n’a encore posé la question.'}</p>
+						<a class="button primary" href={ask}>Poser la question</a>
+					</div>
+				</section>
+			</div>
+		)
+	}
+</Layout>
+
+<style>
+	.again {
+		display: flex;
+		gap: var(--space-sm);
+		max-width: 40rem;
+		margin-bottom: var(--space-xl);
+	}
+
+	.columns {
+		display: grid;
+		gap: var(--space-xl);
+	}
+
+	@media (min-width: 60rem) {
+		.columns {
+			grid-template-columns: 2fr 3fr;
+		}
+	}
+
+	h2 {
+		font-size: var(--text-xl);
+		padding-bottom: var(--space-sm);
+		border-bottom: var(--rule);
+	}
+
+	.docs,
+	.topics {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.docs li {
+		padding-block: var(--space-sm);
+		border-bottom: var(--rule);
+	}
+
+	.docs a {
+		font-weight: 700;
+	}
+
+	.docs p {
+		margin: var(--space-xs) 0 0;
+	}
+
+	.ask {
+		margin-top: var(--space-lg);
+	}
+</style>

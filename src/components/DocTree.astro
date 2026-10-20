@@ -1,0 +1,85 @@
+---
+// Les thèmes du forum : les dossiers et les pages de la doc, dans l'ordre de son menu,
+// avec le nombre de sujets de chacun. Cliquer filtre la liste des sujets.
+import { isWithin, type DocNode } from '../lib/docs';
+import type { TopicSummary } from '../lib/store';
+
+interface Props {
+	nodes: DocNode[];
+	topics: TopicSummary[];
+	/** Filtre en cours (page ou dossier), ou '' pour tous les sujets. */
+	current: string;
+	/** Usage interne : profondeur dans l'arbre. */
+	nested?: boolean;
+}
+
+const { nodes, topics, current, nested = false } = Astro.props;
+const countOf = (id: string) => topics.filter((topic) => isWithin(topic.doc, id)).length;
+const href = (id: string) => `/?doc=${encodeURIComponent(id)}`;
+// Classes des liens préfixées « node- » : `.page` est déjà le conteneur racine du site (global.css).
+---
+
+<ul class:list={['tree', { nested }]}>
+	{
+		nodes.map((node) => {
+			const id = node.type === 'page' ? node.id : node.path;
+			const count = countOf(id);
+			return (
+				<li>
+					<a href={href(id)} class:list={[`node-${node.type}`, { empty: count === 0 }]} aria-current={id === current ? 'true' : undefined}>
+						<span>{node.type === 'page' ? node.title : node.label}</span>
+						{count > 0 && <span class="n">{count}</span>}
+					</a>
+					{node.type === 'folder' && node.items.length > 0 && <Astro.self nodes={node.items} topics={topics} current={current} nested />}
+				</li>
+			);
+		})
+	}
+</ul>
+
+<style>
+	.tree {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.tree.nested {
+		margin-left: var(--space-sm);
+		padding-left: var(--space-sm);
+		border-left: var(--rule);
+	}
+
+	a {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		padding: 0.2rem var(--space-sm);
+		border-radius: var(--radius-sm);
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		text-decoration: none;
+	}
+
+	a.node-folder {
+		font-weight: 600;
+	}
+
+	a.empty {
+		color: var(--color-text-muted);
+	}
+
+	a:hover {
+		color: var(--color-accent);
+	}
+
+	a[aria-current] {
+		background: var(--color-bg-alt);
+		color: var(--color-accent);
+	}
+
+	.n {
+		color: var(--color-text-muted);
+		font-family: var(--font-mono);
+	}
+</style>

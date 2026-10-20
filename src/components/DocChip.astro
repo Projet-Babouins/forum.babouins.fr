@@ -1,0 +1,53 @@
+---
+// Lien d'un sujet vers la doc : « SISR › Linux › Droits Linux ».
+// Page : mène à la page de la doc. Dossier : mène aux sujets de ce dossier, sur le forum.
+import type { DocLink } from '../lib/docs';
+
+interface Props {
+	link: DocLink;
+}
+
+const { link } = Astro.props;
+---
+
+<a class="doc-chip" href={link.href} title={link.kind === 'page' ? 'Lire cette page de la doc' : 'Sujets de ce dossier'}>
+	<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+		{
+			link.kind === 'page' ? (
+				<path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+			) : (
+				<path d="M3 6h7l2 2h9v11H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+			)
+		}
+	</svg>
+	<span class="visually-hidden">{link.kind === 'page' ? 'Page de la doc :' : 'Dossier de la doc :'}</span>
+	{link.trail.map((part) => <span class="trail">{part} ›</span>)}
+	<span>{link.label}</span>
+</a>
+
+<style>
+	.doc-chip {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.3em;
+		padding: 0.1rem 0.55rem;
+		background: var(--color-bg-alt);
+		border-radius: var(--radius-sm);
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		text-decoration: none;
+	}
+
+	.doc-chip:hover {
+		color: var(--color-accent);
+	}
+
+	svg {
+		color: var(--color-accent);
+	}
+
+	.trail {
+		color: var(--color-text-muted);
+	}
+</style>

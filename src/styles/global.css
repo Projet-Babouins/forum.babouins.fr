@@ -1,0 +1,545 @@
+/*
+  Styles globaux du forum : la palette et la typographie de la vitrine www.babouins.fr
+  (dépôt www.babouins.fr, src/styles/global.css). Si une couleur change là-bas, elle change ici aussi.
+  Toutes les couleurs, tailles, espacements et polices sont des variables CSS définies ici.
+  Pour changer l'apparence du site, c'est (presque toujours) ce bloc :root qu'il faut modifier.
+
+  Le parti pris : sobre. Un fond papier, une encre, UNE seule couleur d'accent (la terre cuite
+  du museau de la mascotte), des filets fins. Sur le forum, la piste (ligne de points) relie
+  une question à ses réponses : c'est la seule décoration.
+*/
+
+:root {
+  /* Le site suit le thème du système (clair ou sombre). */
+  color-scheme: light dark;
+
+  /*
+    Couleurs : light-dark(couleur en mode clair, couleur en mode sombre).
+    Contrastes vérifiés (WCAG AA) : pense à les revérifier si tu changes une couleur.
+  */
+  --color-bg: light-dark(#faf7f2, #14110e);
+  --color-bg-alt: light-dark(#f1ebe1, #1d1915);
+  --color-surface: light-dark(#ffffff, #1d1915);
+  --color-ink: light-dark(#1f1a15, #ece5da);
+  --color-text-muted: light-dark(#5e554b, #a89e91);
+  --color-rule: light-dark(#d9cfbf, #3a332b); /* filets et bordures */
+  --color-accent: light-dark(#a8431a, #e39a6f);
+  --color-accent-hover: light-dark(#7f3012, #f0b892);
+  --color-on-accent: light-dark(#ffffff, #14110e);
+  --color-focus: light-dark(#1d4ed8, #93c5fd);
+  /* Question résolue : un vert sourd, le seul ajout à la palette de la vitrine. */
+  --color-solved: light-dark(#2f6b3a, #8fcf98);
+
+  /* Blocs de code : sombres dans les deux thèmes. */
+  --color-code-bg: #24292e;
+  --color-code-text: #e1e4e8;
+
+  /*
+    Polices. Celle des titres est déclarée dans astro.config.mjs (option `fonts`),
+    les autres sont celles du système : rien à télécharger.
+  */
+  --font-title: var(--font-bricolage, system-ui, sans-serif);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+
+  /* Tailles de texte */
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: clamp(1.75rem, 1.35rem + 1.8vw, 2.6rem);
+  /* Le nom du site, dans le hero : avec la mascotte à côté, il occupe toute la largeur du contenu. */
+  --text-hero: clamp(3rem, 17.6vw - 0.4rem, 12.25rem);
+
+  /* Espacements */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  /* Mise en page */
+  --width-content: 70rem;
+  --width-prose: 44rem;
+  --radius-sm: 0.3rem;
+  --radius: 0.5rem;
+  --rule: 1px solid var(--color-rule);
+
+  /*
+    La piste (voir plus bas, et Piste.astro). Un point tous les --piste-gap,
+    à poser en fond d'un élément de 4px : `background: var(--piste-x)` (ligne horizontale)
+    ou `background: var(--piste-y)` (ligne verticale).
+  */
+  --piste-gap: 10px;
+  --piste-ring: 0.875rem; /* diamètre de l'anneau d'un arrêt */
+  --piste-dots: radial-gradient(circle, var(--color-accent) 1.25px, transparent 1.75px);
+  --piste-x: var(--piste-dots) 0 0 / var(--piste-gap) 4px repeat-x;
+  --piste-y: var(--piste-dots) 0 0 / 4px var(--piste-gap) repeat-y;
+}
+
+/* Thème forcé par le bouton du header (voir ThemeToggle.astro). */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* ---------- Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: var(--space-3xl);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.65;
+}
+
+/*
+  Conteneur racine (voir Layout.astro). C'est lui, et pas <body>, qui coupe ce qui dépasse
+  sur les côtés : `overflow-x` sur <body> ne coupe rien.
+*/
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow-x: clip;
+}
+
+main {
+  flex: 1;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-title);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+h1,
+h2 {
+  font-size: var(--text-2xl);
+}
+
+h3 {
+  font-size: var(--text-xl);
+}
+
+p {
+  margin: 0 0 var(--space-md);
+}
+
+a {
+  color: var(--color-accent);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+/* Le texte sélectionné à la souris passe au jaune banane. */
+::selection {
+  background: #ecc04f;
+  color: #1f1a15;
+}
+
+/* Focus bien visible pour la navigation au clavier. */
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- Utilitaires ---------- */
+
+/*
+  Largeur du contenu. Attention : sur un élément qui porte cette classe, ne jamais écrire
+  `padding: ...` en raccourci (ça effacerait les marges latérales). Utiliser `padding-block`.
+*/
+.container {
+  width: 100%;
+  max-width: var(--width-content);
+  margin-inline: auto;
+  padding-inline: var(--space-lg);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+/* Petit texte en capitales, au-dessus d'un titre ou sous un extrait. */
+.kicker {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/*
+  Section qui accueille un motif de fond (composant Motif.astro) :
+  le motif passe derrière le contenu, et ce qui dépasse de la section est coupé.
+*/
+.has-motif {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+}
+
+/*
+  Un arrêt sur la piste. La classe dessine l'anneau (::after) et prépare la ligne de points
+  vers l'arrêt suivant (::before). Celui qui l'utilise place les deux (top, left, largeur...)
+  et choisit le sens de la ligne : `background: var(--piste-x)` ou `var(--piste-y)`.
+  Sur un fond autre que celui de la page, donner sa couleur à --piste-bg : l'anneau reste plein.
+*/
+.stop {
+  position: relative;
+}
+
+.stop::before,
+.stop::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.stop::after {
+  width: var(--piste-ring);
+  height: var(--piste-ring);
+  background: var(--piste-bg, var(--color-bg));
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+}
+
+/* Petit bouton carré du header (menu mobile, thème). */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  background: transparent;
+  color: var(--color-ink);
+  border: var(--rule);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: var(--color-bg-alt);
+  color: var(--color-accent);
+}
+
+/* Visible uniquement par les lecteurs d'écran. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Lien "Aller au contenu" : apparaît au premier appui sur Tab. */
+.skip-link {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  z-index: 100;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+  color: var(--color-on-accent);
+}
+
+/* ---------- Messages (rendus par GitHub, voir lib/store/github.ts) ---------- */
+
+.rendered {
+  overflow-wrap: anywhere;
+}
+
+.rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.rendered :is(h1, h2, h3) {
+  margin-top: var(--space-lg);
+  font-size: 1.25rem;
+}
+
+.rendered img {
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.rendered table {
+  display: block;
+  overflow-x: auto;
+  margin-bottom: var(--space-md);
+  border-collapse: collapse;
+}
+
+.rendered :is(th, td) {
+  padding: var(--space-xs) var(--space-sm);
+  border: var(--rule);
+}
+
+.rendered ul,
+.rendered ol {
+  margin: 0 0 var(--space-md);
+  padding-left: var(--space-lg);
+}
+
+.rendered li {
+  margin-bottom: var(--space-sm);
+}
+
+.rendered li::marker {
+  color: var(--color-accent);
+}
+
+/* Encadré d'avertissement (en Markdown : une ligne qui commence par ">"). */
+.rendered blockquote {
+  margin: 0 0 var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg-alt);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.rendered blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.rendered code {
+  padding: 0.15em 0.4em;
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.rendered pre {
+  margin: 0 0 var(--space-lg);
+  padding: var(--space-md);
+  overflow-x: auto;
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.rendered pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* ---------- Éléments du forum ---------- */
+
+main {
+  padding-block: var(--space-xl) var(--space-2xl);
+}
+
+/* Bouton. `.primary` : l'action principale de la page, une seule par écran. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0.55rem 1rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--rule);
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.button.primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+}
+
+.button.primary:hover {
+  background: var(--color-accent-hover);
+  color: var(--color-on-accent);
+}
+
+.button.small {
+  padding: 0.3rem 0.7rem;
+  font-size: var(--text-sm);
+}
+
+.link-button {
+  padding: 0;
+  background: none;
+  color: var(--color-accent);
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* Étiquettes : type de sujet et état. */
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: var(--rule);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge.solved {
+  color: var(--color-solved);
+  border-color: currentColor;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.small {
+  font-size: var(--text-sm);
+}
+
+/* Formulaires */
+.field {
+  display: grid;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+
+.field > span,
+.field legend {
+  font-weight: 600;
+}
+
+.field small {
+  color: var(--color-text-muted);
+}
+
+input[type='text'],
+input[type='search'],
+select,
+textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--rule);
+  border-radius: var(--radius);
+  font: inherit;
+}
+
+textarea {
+  min-height: 10rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Message d'erreur d'un formulaire. */
+.alert {
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg-alt);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Avatar rond, à côté d'un pseudo. */
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-bg-alt);
+  vertical-align: middle;
+}
+
+/* Mise en page à deux colonnes : contenu + colonne latérale (thèmes, page de la doc). */
+.with-aside {
+  display: grid;
+  gap: var(--space-xl);
+}
+
+@media (min-width: 60rem) {
+  .with-aside {
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    align-items: start;
+  }
+
+  .with-aside.aside-first {
+    grid-template-columns: 16rem minmax(0, 1fr);
+  }
+
+  .with-aside > aside {
+    position: sticky;
+    top: 5.5rem;
+  }
+}

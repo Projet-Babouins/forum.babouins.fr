@@ -1,0 +1,104 @@
+---
+// Un sujet dans une liste : type, titre, lien vers la doc, auteur, activité.
+import DocChip from './DocChip.astro';
+import { describeDoc, type DocsIndex } from '../lib/docs';
+import { ago, fullDate, plural } from '../lib/format';
+import type { TopicSummary } from '../lib/store';
+
+interface Props {
+	topic: TopicSummary;
+	index: DocsIndex;
+	/** Extrait à afficher sous le titre (résultats de recherche). */
+	excerpt?: string;
+}
+
+const { topic, index, excerpt } = Astro.props;
+const doc = describeDoc(index, topic.doc);
+---
+
+<li class="topic">
+	<div class="state" aria-hidden="true">
+		<span class:list={['count', { solved: topic.answered }]}>{topic.answered ? '✓' : topic.replies}</span>
+	</div>
+	<div class="main">
+		<p class="tags">
+			<span class="badge">{topic.kind === 'question' ? 'Question' : 'Discussion'}</span>
+			{topic.answered && <span class="badge solved">Résolue</span>}
+			{topic.closed && <span class="badge">Fermé</span>}
+			{doc && <DocChip link={doc} />}
+		</p>
+		<h3><a href={`/sujet/${topic.number}`}>{topic.title}</a></h3>
+		{excerpt && <p class="excerpt muted">{excerpt}</p>}
+		<p class="meta muted small">
+			{topic.author?.login ?? 'Compte supprimé'} · <time datetime={topic.updatedAt} title={fullDate(topic.updatedAt)}>actif {ago(topic.updatedAt)}</time>
+			· {plural(topic.replies, 'réponse', 'réponses')}
+		</p>
+	</div>
+</li>
+
+<style>
+	.topic {
+		display: flex;
+		gap: var(--space-md);
+		padding-block: var(--space-md);
+		border-bottom: var(--rule);
+	}
+
+	/* Le nombre de réponses dans un anneau : l'arrêt de la piste. Une coche quand c'est résolu. */
+	.count {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border: 2px solid var(--color-rule);
+		border-radius: 50%;
+		color: var(--color-text-muted);
+		font-family: var(--font-mono);
+		font-size: var(--text-sm);
+	}
+
+	.count.solved {
+		border-color: var(--color-solved);
+		color: var(--color-solved);
+		font-weight: 700;
+	}
+
+	.main {
+		min-width: 0;
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-xs);
+	}
+
+	h3 {
+		margin: 0 0 var(--space-xs);
+		font-family: var(--font-sans);
+		font-size: var(--text-lg);
+		font-weight: 700;
+		letter-spacing: 0;
+	}
+
+	h3 a {
+		color: var(--color-ink);
+		text-decoration: none;
+	}
+
+	h3 a:hover {
+		color: var(--color-accent);
+		text-decoration: underline;
+	}
+
+	.excerpt {
+		margin-bottom: var(--space-xs);
+		font-size: var(--text-sm);
+	}
+
+	.meta {
+		margin: 0;
+	}
+</style>

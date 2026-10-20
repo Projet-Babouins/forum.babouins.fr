@@ -1,0 +1,33 @@
+---
+import { GITHUB_REPO } from 'astro:env/server';
+import { docsHome } from '../lib/docs';
+---
+
+<footer class="site-footer">
+	<div class="container">
+		<p>
+			<a href="https://www.babouins.fr">Babouins</a> : la doc du BTS SIO, écrite par ses étudiants.
+			Le forum est fait des <a href={`https://github.com/${GITHUB_REPO}/discussions`}>GitHub Discussions</a> du projet ;
+			la <a href={docsHome()}>doc</a> en garde les meilleures réponses.
+		</p>
+		<p>
+			Contenu sous <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.fr">CC BY-SA 4.0</a>, code sous
+			<a href={`https://github.com/${GITHUB_REPO}`}>MIT</a>. Règle d'or : aucune information venant d'une entreprise
+			d'alternance.
+		</p>
+	</div>
+</footer>
+
+<style>
+	.site-footer {
+		padding-block: var(--space-xl);
+		background: var(--color-bg-alt);
+		border-top: var(--rule);
+		color: var(--color-text-muted);
+		font-size: var(--text-sm);
+	}
+
+	p:last-child {
+		margin-bottom: 0;
+	}
+</style>

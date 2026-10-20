@@ -1,0 +1,11 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+Astro.response.status = 404;
+---
+
+<Layout title="Introuvable" noindex>
+	<h1>Ce sujet n'existe pas (ou plus)</h1>
+	<p>L'adresse est peut-être incomplète, ou le sujet a été supprimé sur GitHub.</p>
+	<p><a class="button" href="/">Revenir aux sujets</a></p>
+</Layout>

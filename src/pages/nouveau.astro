@@ -1,0 +1,225 @@
+---
+// Nouveau sujet. Réservé aux membres (voir src/middleware.ts).
+// Arrivé depuis une page de la doc (« Poser une question sur cette page »), le thème est déjà choisi.
+import Layout from '../layouts/Layout.astro';
+import Composer from '../components/Composer.astro';
+import { describeDoc, docMarker, docsIndex, isValidDocId, type DocNode } from '../lib/docs';
+import { ForumError, messageOf } from '../lib/errors';
+import { forum, type Kind } from '../lib/store';
+
+const index = await docsIndex();
+const params = Astro.url.searchParams;
+
+let kind: Kind = params.get('type') === 'discussion' ? 'discussion' : 'question';
+let title = (params.get('titre') ?? '').slice(0, 200);
+let doc = isValidDocId(params.get('doc') ?? '') ? params.get('doc')! : '';
+let body = '';
+let error = '';
+
+if (Astro.request.method === 'POST') {
+	const form = await Astro.request.formData();
+	kind = form.get('kind') === 'discussion' ? 'discussion' : 'question';
+	title = String(form.get('title') ?? '').trim();
+	doc = String(form.get('doc') ?? '');
+	body = String(form.get('body') ?? '').trim();
+	try {
+		if (title.length < 8) throw new ForumError(400, 'Donne un titre un peu plus précis (8 caractères au moins).');
+		if (title.length > 200) throw new ForumError(400, 'Le titre est trop long (200 caractères au plus).');
+		if (body.length < 10) throw new ForumError(400, 'Explique un peu plus ta question (10 caractères au moins).');
+		if (body.length > 20_000) throw new ForumError(400, 'Le message est trop long (20 000 caractères au plus).');
+		if (doc && !(isValidDocId(doc) && describeDoc(index, doc))) throw new ForumError(400, "Ce thème n'existe pas dans la doc.");
+		const number = await forum().create(
+			{ user: Astro.locals.user!, token: Astro.locals.githubToken },
+			{ kind, title, doc: doc || null, body: doc ? body + docMarker(doc) : body },
+		);
+		return Astro.redirect(`/sujet/${number}`, 303);
+	} catch (caught) {
+		error = messageOf(caught);
+		Astro.response.status = caught instanceof ForumError ? caught.status : 502;
+	}
+}
+
+const chosen = describeDoc(index, doc);
+
+/** Options de la liste des thèmes : dossiers et pages, indentés comme dans le menu de la doc. */
+const options: { value: string; label: string }[] = [];
+const walk = (nodes: DocNode[], depth: number) => {
+	for (const node of nodes) {
+		const indent = '   '.repeat(depth);
+		if (node.type === 'page') options.push({ value: node.id, label: `${indent}${node.title}` });
+		else {
+			options.push({ value: node.path, label: `${indent}${node.label} (tout le dossier)` });
+			walk(node.items, depth + 1);
+		}
+	}
+};
+walk(index.tree, 0);
+---
+
+<Layout title="Nouveau sujet" noindex>
+	<div class="with-aside">
+		<section>
+			<h1>Nouveau sujet</h1>
+			{
+				chosen?.kind === 'page' && (
+					<p class="muted">
+						À propos de la page <a href={chosen.href}>{chosen.label}</a>. Un réflexe : la relire d'abord, la réponse y est
+						peut-être déjà.
+					</p>
+				)
+			}
+			{error && <p class="alert" role="alert">{error}</p>}
+
+			<form method="post" id="new-topic">
+				<fieldset class="field">
+					<legend>Type</legend>
+					<div class="kinds">
+						<label class="kind">
+							<input type="radio" name="kind" value="question" checked={kind === 'question'} />
+							<span><strong>Question</strong><small>Tu cherches une solution. Tu pourras choisir la meilleure réponse.</small></span>
+						</label>
+						<label class="kind">
+							<input type="radio" name="kind" value="discussion" checked={kind === 'discussion'} />
+							<span><strong>Discussion</strong><small>Une idée, un retour, une page à écrire ensemble.</small></span>
+						</label>
+					</div>
+				</fieldset>
+
+				<label class="field">
+					<span>Titre</span>
+					<input type="text" name="title" id="title" value={title} required minlength="8" maxlength="200" autocomplete="off" placeholder="Ex. : « chmod refuse de changer les droits de mon dossier »" />
+				</label>
+
+				<div id="similar" class="similar" hidden aria-live="polite">
+					<p class="kicker">Ça ressemble à…</p>
+					<ul></ul>
+				</div>
+
+				<label class="field">
+					<span>Thème de la doc</span>
+					<select name="doc">
+						<option value="">Aucun (discussion générale)</option>
+						{options.map((option) => <option value={option.value} selected={option.value === doc}>{option.label}</option>)}
+					</select>
+					<small>Le sujet apparaîtra en bas de cette page (ou de ce dossier) dans la doc.</small>
+				</label>
+
+				<div class="field">
+					<Composer label="Message" value={body} placeholder="Ce que tu as essayé, ce qui se passe, le message d'erreur exact…" rows={10} />
+				</div>
+
+				<p class="submit">
+					<button type="submit" class="button primary">Publier</button>
+					<a href={doc ? `/?doc=${encodeURIComponent(doc)}` : '/'}>Annuler</a>
+				</p>
+			</form>
+		</section>
+
+		<aside class="tips" aria-label="Conseils">
+			<p class="kicker">Une bonne question</p>
+			<ul class="small">
+				<li>Un titre qui dit le problème, pas « aide svp ».</li>
+				<li>Ce que tu as essayé, et ce qui s'est passé.</li>
+				<li>Le message d'erreur exact, dans un bloc de code.</li>
+				<li>Aucune info d'entreprise : remplace les IP par <code>192.0.2.x</code>.</li>
+			</ul>
+		</aside>
+	</div>
+</Layout>
+
+<script>
+	// Pendant qu'on tape le titre : les pages de la doc et les sujets qui se ressemblent.
+	// La réponse existe peut-être déjà (voir /api/recherche).
+	type Hit = { title: string; url: string; answered?: boolean };
+	const title = document.querySelector<HTMLInputElement>('#title')!;
+	const box = document.querySelector<HTMLElement>('#similar')!;
+	const list = box.querySelector('ul')!;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	const item = (hit: Hit, tag: string) => {
+		const li = document.createElement('li');
+		const a = Object.assign(document.createElement('a'), { href: hit.url, textContent: hit.title, target: '_blank' });
+		const small = Object.assign(document.createElement('small'), { className: 'muted', textContent: ` · ${tag}` });
+		li.append(a, small);
+		return li;
+	};
+
+	title.addEventListener('input', () => {
+		clearTimeout(timer);
+		timer = setTimeout(async () => {
+			const q = title.value.trim();
+			if (q.length < 4) return void (box.hidden = true);
+			try {
+				const response = await fetch(`/api/recherche?n=4&q=${encodeURIComponent(q)}`);
+				const { docs, topics } = (await response.json()) as { docs: Hit[]; topics: Hit[] };
+				list.replaceChildren(
+					...docs.map((hit) => item(hit, 'page de la doc')),
+					...topics.map((hit) => item(hit, hit.answered ? 'question résolue' : 'sujet du forum')),
+				);
+				box.hidden = list.children.length === 0;
+			} catch {
+				box.hidden = true;
+			}
+		}, 350);
+	});
+</script>
+
+<style>
+	.kinds {
+		display: grid;
+		gap: var(--space-sm);
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+	}
+
+	.kind {
+		display: flex;
+		gap: var(--space-sm);
+		padding: var(--space-md);
+		border: var(--rule);
+		border-radius: var(--radius);
+		cursor: pointer;
+	}
+
+	.kind:has(:checked) {
+		border-color: var(--color-accent);
+		background: var(--color-bg-alt);
+	}
+
+	.kind span {
+		display: grid;
+	}
+
+	.kind small {
+		color: var(--color-text-muted);
+	}
+
+	.similar {
+		margin: calc(-1 * var(--space-sm)) 0 var(--space-lg);
+		padding: var(--space-sm) var(--space-md);
+		border-left: 3px solid var(--color-accent);
+		background: var(--color-bg-alt);
+	}
+
+	.similar ul {
+		margin: 0;
+		padding-left: var(--space-md);
+	}
+
+	.submit {
+		display: flex;
+		align-items: center;
+		gap: var(--space-lg);
+	}
+
+	.tips ul {
+		padding-left: var(--space-md);
+	}
+
+	.tips li {
+		margin-bottom: var(--space-sm);
+	}
+
+	.tips code {
+		font-family: var(--font-mono);
+	}
+</style>

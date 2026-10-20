@@ -1,0 +1,123 @@
+---
+// Zone de saisie d'un message, avec un onglet « Aperçu » (rendu exactement comme il sera publié).
+// Sans JavaScript, il reste une simple zone de texte : le formulaire fonctionne quand même.
+interface Props {
+	name?: string;
+	value?: string;
+	label: string;
+	placeholder?: string;
+	required?: boolean;
+	rows?: number;
+}
+
+const { name = 'body', value = '', label, placeholder, required = true, rows = 8 } = Astro.props;
+const id = `composer-${Math.random().toString(36).slice(2, 8)}`;
+---
+
+<forum-composer class="composer">
+	<div class="bar">
+		<label for={id}>{label}</label>
+		<div class="tabs" hidden>
+			<button type="button" class="tab" data-tab="write" aria-pressed="true">Écrire</button>
+			<button type="button" class="tab" data-tab="preview" aria-pressed="false">Aperçu</button>
+		</div>
+	</div>
+	<textarea {id} {name} {rows} {placeholder} {required} minlength="10" maxlength="20000">{value}</textarea>
+	<div class="preview rendered" hidden aria-live="polite"></div>
+	<small class="muted">
+		Markdown accepté : <code>`code`</code>, blocs <code>```bash</code>, <strong>**gras**</strong>, listes, liens.
+		Pas d'information d'entreprise (IP, noms internes, identifiants).
+	</small>
+</forum-composer>
+
+<script>
+	class ForumComposer extends HTMLElement {
+		connectedCallback() {
+			const textarea = this.querySelector('textarea')!;
+			const preview = this.querySelector<HTMLElement>('.preview')!;
+			const tabs = this.querySelector<HTMLElement>('.tabs')!;
+			tabs.hidden = false;
+
+			const show = async (tab: string) => {
+				for (const button of tabs.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
+				const previewing = tab === 'preview';
+				textarea.hidden = previewing;
+				preview.hidden = !previewing;
+				if (!previewing) return textarea.focus();
+
+				preview.textContent = 'Aperçu en cours…';
+				try {
+					const response = await fetch('/api/apercu', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ markdown: textarea.value }),
+					});
+					const result = (await response.json()) as { html?: string; error?: string };
+					// HTML rendu et nettoyé par GitHub (ou, en développement, par lib/markdown.ts).
+					if (result.html !== undefined) preview.innerHTML = result.html || '<p class="muted">Rien à afficher.</p>';
+					else preview.textContent = result.error ?? 'Aperçu indisponible.';
+				} catch {
+					preview.textContent = 'Aperçu indisponible.';
+				}
+			};
+
+			tabs.addEventListener('click', (event) => {
+				const tab = (event.target as HTMLElement).closest('button')?.dataset.tab;
+				if (tab) void show(tab);
+			});
+		}
+	}
+	customElements.define('forum-composer', ForumComposer);
+</script>
+
+<style>
+	.composer {
+		display: grid;
+		gap: var(--space-xs);
+	}
+
+	.bar {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: var(--space-sm);
+	}
+
+	label {
+		font-weight: 600;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 2px;
+	}
+
+	.tab {
+		padding: 0.2rem 0.7rem;
+		background: none;
+		color: var(--color-text-muted);
+		border: var(--rule);
+		border-radius: var(--radius-sm);
+		font: inherit;
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+
+	.tab[aria-pressed='true'] {
+		background: var(--color-bg-alt);
+		color: var(--color-ink);
+		font-weight: 600;
+	}
+
+	.preview {
+		min-height: 10rem;
+		padding: var(--space-md);
+		border: var(--rule);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+	}
+
+	code {
+		font-family: var(--font-mono);
+	}
+</style>

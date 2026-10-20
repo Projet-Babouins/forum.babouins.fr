@@ -1,0 +1,112 @@
+---
+import ThemeToggle from './ThemeToggle.astro';
+import { docsHome } from '../lib/docs';
+
+const user = Astro.locals.user;
+const query = Astro.url.pathname === '/recherche' ? (Astro.url.searchParams.get('q') ?? '') : '';
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+<header class="site-header">
+	<div class="container inner">
+		<a href="/" class="brand">
+			<img src="/favicon.png" alt="" width="36" height="36" />
+			<span>Babouins <small>Forum</small></span>
+		</a>
+
+		<!-- Une seule recherche pour la doc et le forum (voir lib/search.ts). -->
+		<form class="search" action="/recherche" role="search">
+			<label for="header-search" class="visually-hidden">Chercher dans la doc et le forum</label>
+			<input id="header-search" type="search" name="q" value={query} placeholder="Chercher dans la doc et le forum" />
+		</form>
+
+		<nav class="links" aria-label="Navigation principale">
+			<a href={docsHome()}>Docs</a>
+			{
+				user ? (
+					<form method="post" action="/deconnexion" class="who">
+						<img class="avatar" src={user.avatar || '/favicon.png'} alt="" width="28" height="28" />
+						<span class="visually-hidden">Connecté en tant que</span>
+						<span class="login">{user.login}</span>
+						<button type="submit" class="link-button small">Déconnexion</button>
+					</form>
+				) : (
+					<a href={`/connexion?retour=${encodeURIComponent(here)}`}>Se connecter</a>
+				)
+			}
+			<ThemeToggle />
+		</nav>
+	</div>
+</header>
+
+<style>
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: var(--color-bg);
+		border-bottom: var(--rule);
+	}
+
+	.inner {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm) var(--space-lg);
+		padding-block: var(--space-sm);
+	}
+
+	.brand {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-sm);
+		color: var(--color-ink);
+		font-family: var(--font-title);
+		font-size: 1.35rem;
+		font-weight: 800;
+		letter-spacing: -0.02em;
+		text-decoration: none;
+	}
+
+	.brand small {
+		color: var(--color-accent);
+		font-size: inherit;
+	}
+
+	.search {
+		flex: 1 1 14rem;
+		max-width: 28rem;
+	}
+
+	.search input {
+		padding-block: 0.45rem;
+	}
+
+	.links {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		margin-left: auto;
+	}
+
+	.links > a {
+		color: var(--color-ink);
+		font-weight: 500;
+		text-decoration: none;
+	}
+
+	.links > a:hover {
+		color: var(--color-accent);
+	}
+
+	.who {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin: 0;
+	}
+
+	.login {
+		font-weight: 600;
+	}
+</style>

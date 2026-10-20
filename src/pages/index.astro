@@ -1,0 +1,207 @@
+---
+// Accueil du forum : tous les sujets, filtrables par thème de la doc, par type et par état.
+import Layout from '../layouts/Layout.astro';
+import DocTree from '../components/DocTree.astro';
+import TopicRow from '../components/TopicRow.astro';
+import { describeDoc, docsIndex, isValidDocId, isWithin } from '../lib/docs';
+import { messageOf } from '../lib/errors';
+import { forum, type TopicSummary } from '../lib/store';
+
+const STEP = 30;
+const params = Astro.url.searchParams;
+const doc = isValidDocId(params.get('doc') ?? '') ? params.get('doc')! : '';
+const kind = params.get('type') === 'question' || params.get('type') === 'discussion' ? params.get('type') : '';
+const state = params.get('etat') === 'ouverts' || params.get('etat') === 'resolus' ? params.get('etat') : '';
+const shown = Math.max(STEP, Math.min(Number(params.get('voir')) || STEP, 1000));
+
+const index = await docsIndex();
+let all: TopicSummary[] = [];
+let error = '';
+try {
+	all = await forum().list();
+} catch (caught) {
+	error = messageOf(caught);
+}
+
+const topics = all.filter(
+	(topic) =>
+		(!doc || isWithin(topic.doc, doc)) &&
+		(!kind || topic.kind === kind) &&
+		(state !== 'ouverts' || (topic.kind === 'question' && !topic.answered)) &&
+		(state !== 'resolus' || topic.answered),
+);
+const general = all.filter((topic) => topic.doc === null).length;
+const filtered = describeDoc(index, doc);
+
+/** Adresse de la liste avec un filtre changé (les autres sont gardés). */
+const withParam = (name: string, value: string) => {
+	const url = new URL(Astro.url);
+	url.searchParams.delete('voir');
+	if (value) url.searchParams.set(name, value);
+	else url.searchParams.delete(name);
+	return url.pathname + url.search;
+};
+const more = new URL(Astro.url);
+more.searchParams.set('voir', String(shown + STEP));
+const newTopicHref = doc ? `/nouveau?doc=${encodeURIComponent(doc)}` : '/nouveau';
+---
+
+<Layout title={filtered ? filtered.label : undefined}>
+	<div class="with-aside aside-first">
+		<aside aria-label="Thèmes de la doc">
+			<a class="button primary new" href={newTopicHref}>Nouveau sujet</a>
+			<p class="kicker">Thèmes de la doc</p>
+			<a class="all" href={withParam('doc', '')} aria-current={doc ? undefined : 'true'}>Tous les sujets <span>{all.length}</span></a>
+			<DocTree nodes={index.tree} topics={all} current={doc} />
+			{general > 0 && <p class="muted small general">{general} hors doc (discussions générales)</p>}
+		</aside>
+
+		<section aria-labelledby="titre">
+			<header class="head">
+				<div>
+					{filtered && <p class="kicker">{filtered.kind === 'page' ? 'Page de la doc' : 'Dossier de la doc'}</p>}
+					<h1 id="titre">{filtered ? filtered.label : 'Questions et échanges'}</h1>
+					{
+						filtered?.kind === 'page' ? (
+							<p class="muted">
+								Les sujets sur cette page. <a href={filtered.href}>Relire la page dans la doc</a>
+							</p>
+						) : (
+							!filtered && (
+								<p class="muted">
+									Une question sur un cours, une commande qui ne marche pas, une idée de page ? Pose-la ici : les
+									meilleures réponses rejoignent la doc.
+								</p>
+							)
+						)
+					}
+				</div>
+			</header>
+
+			<nav class="filters" aria-label="Filtres">
+				<a href={withParam('type', '')} aria-current={!kind ? 'true' : undefined}>Tout</a>
+				<a href={withParam('type', 'question')} aria-current={kind === 'question' ? 'true' : undefined}>Questions</a>
+				<a href={withParam('type', 'discussion')} aria-current={kind === 'discussion' ? 'true' : undefined}>Discussions</a>
+				<span class="sep" aria-hidden="true"></span>
+				<a href={withParam('etat', state === 'ouverts' ? '' : 'ouverts')} aria-current={state === 'ouverts' ? 'true' : undefined}>Sans solution</a>
+				<a href={withParam('etat', state === 'resolus' ? '' : 'resolus')} aria-current={state === 'resolus' ? 'true' : undefined}>Résolues</a>
+			</nav>
+
+			{error && <p class="alert" role="alert">{error}</p>}
+
+			{
+				topics.length > 0 ? (
+					<ul class="topics">
+						{topics.slice(0, shown).map((topic) => (
+							<TopicRow topic={topic} index={index} />
+						))}
+					</ul>
+				) : (
+					!error && (
+						<div class="empty">
+							<p>Pas encore de sujet ici.</p>
+							<a class="button" href={newTopicHref}>
+								Poser la première question
+							</a>
+						</div>
+					)
+				)
+			}
+			{
+				topics.length > shown && (
+					<p class="more">
+						<a class="button" href={more.pathname + more.search}>
+							Voir plus de sujets
+						</a>
+					</p>
+				)
+			}
+		</section>
+	</div>
+</Layout>
+
+<style>
+	.new {
+		justify-content: center;
+		width: 100%;
+		margin-bottom: var(--space-lg);
+	}
+
+	.all {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.2rem var(--space-sm);
+		border-radius: var(--radius-sm);
+		color: var(--color-ink);
+		font-size: var(--text-sm);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.all[aria-current] {
+		background: var(--color-bg-alt);
+		color: var(--color-accent);
+	}
+
+	.all span {
+		color: var(--color-text-muted);
+		font-family: var(--font-mono);
+	}
+
+	.general {
+		margin-top: var(--space-md);
+	}
+
+	.head h1 {
+		margin-bottom: var(--space-sm);
+	}
+
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-xs) var(--space-md);
+		padding-block: var(--space-sm);
+		border-bottom: var(--rule);
+		font-size: var(--text-sm);
+	}
+
+	.filters a {
+		color: var(--color-text-muted);
+		text-decoration: none;
+	}
+
+	.filters a:hover,
+	.filters a[aria-current] {
+		color: var(--color-accent);
+	}
+
+	.filters a[aria-current] {
+		font-weight: 600;
+		text-decoration: underline;
+		text-decoration-thickness: 2px;
+		text-underline-offset: 0.45em;
+	}
+
+	.sep {
+		width: 1px;
+		height: 1rem;
+		background: var(--color-rule);
+	}
+
+	.topics {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.empty {
+		padding-block: var(--space-2xl);
+		text-align: center;
+	}
+
+	.more {
+		margin-top: var(--space-lg);
+		text-align: center;
+	}
+</style>
