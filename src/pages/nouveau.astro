@@ -3,7 +3,7 @@
 // Arrivé depuis une page de la doc (« Poser une question sur cette page »), le thème est déjà choisi.
 import Layout from '../layouts/Layout.astro';
 import Composer from '../components/Composer.astro';
-import { describeDoc, docMarker, docsIndex, isValidDocId, type DocNode } from '../lib/docs';
+import { describeDoc, docMarker, docOptions, docsIndex, isValidDocId } from '../lib/docs';
 import { ForumError, messageOf } from '../lib/errors';
 import { forum, memberOf, type Kind } from '../lib/store';
 
@@ -41,19 +41,7 @@ if (Astro.request.method === 'POST') {
 
 const chosen = describeDoc(index, doc);
 
-/** Options de la liste des thèmes : dossiers et pages, indentés comme dans le menu de la doc. */
-const options: { value: string; label: string }[] = [];
-const walk = (nodes: DocNode[], depth: number) => {
-	for (const node of nodes) {
-		const indent = '   '.repeat(depth);
-		if (node.type === 'page') options.push({ value: node.id, label: `${indent}${node.title}` });
-		else {
-			options.push({ value: node.path, label: `${indent}${node.label} (tout le dossier)` });
-			walk(node.items, depth + 1);
-		}
-	}
-};
-walk(index.tree, 0);
+const options = docOptions(index.tree);
 ---
 
 <Layout title="Nouveau sujet" noindex>

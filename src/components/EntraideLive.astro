@@ -1,0 +1,159 @@
+---
+// Le temps réel de l'entraide, côté navigateur. Sans JavaScript, la page marche : il faut juste la recharger.
+// Les zones à mettre à jour portent `data-live="nom"` ; ce composant rafraîchit celles-là seulement,
+// jamais un formulaire (on ne perd pas ce que la personne est en train d'écrire).
+interface Props {
+	/** Login de la personne connectée, pour ne pas la notifier de ses propres actions. */
+	me: string;
+	/** Page : l'onglet « Demander de l'aide », l'onglet « Aider » ou un ticket. */
+	view: 'demander' | 'aider' | 'ticket';
+	/** Sur la page d'un ticket : ne suivre que ce ticket. */
+	ticket?: number;
+}
+
+const { me, view, ticket } = Astro.props;
+---
+
+<entraide-live data-me={me} data-view={view} data-ticket={ticket}>
+	<span class="state" role="status">En direct</span>
+	<button type="button" class="button small" hidden>Activer les notifications</button>
+</entraide-live>
+
+<style>
+	entraide-live {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: flex-end;
+		gap: var(--space-sm) var(--space-md);
+		margin-bottom: var(--space-sm);
+	}
+
+	/* Pastille : verte quand le flux est connecté, grise sinon (sans JavaScript, elle reste cachée). */
+	.state {
+		display: none;
+		align-items: center;
+		gap: 0.4rem;
+		color: var(--color-text-muted);
+		font-size: var(--text-sm);
+	}
+
+	:global(.js) .state {
+		display: inline-flex;
+	}
+
+	.state::before {
+		content: '';
+		width: 0.55rem;
+		height: 0.55rem;
+		background: var(--color-text-muted);
+		border-radius: 50%;
+	}
+
+	.state.on::before {
+		background: var(--color-solved);
+	}
+</style>
+
+<script>
+	interface TicketEvent {
+		type: 'created' | 'taken' | 'released' | 'resolved' | 'reopened' | 'message' | 'published' | 'deleted';
+		ticketId: number;
+		title: string;
+		author: string;
+		helper: string | null;
+		by: string;
+	}
+
+	class EntraideLive extends HTMLElement {
+		connectedCallback() {
+			const { me, view, ticket } = this.dataset;
+			this.setupNotifications();
+
+			const source = new EventSource(ticket ? `/api/entraide/flux?ticket=${ticket}` : '/api/entraide/flux');
+			const state = this.querySelector('.state')!;
+			let connected = false;
+			// Après une coupure, EventSource se reconnecte seul : on rattrape ce qu'on a manqué.
+			source.onopen = () => {
+				if (connected) this.refresh();
+				connected = true;
+				state.classList.add('on');
+				state.textContent = 'En direct';
+			};
+			source.onerror = () => {
+				state.classList.remove('on');
+				state.textContent = 'Reconnexion…';
+			};
+			source.onmessage = (message) => {
+				const event = JSON.parse(message.data) as TicketEvent;
+				if (event.type === 'deleted' && String(event.ticketId) === ticket) return void location.assign('/entraide?onglet=aider');
+				this.notify(event, me!, view!);
+				this.refresh();
+			};
+		}
+
+		private setupNotifications() {
+			const button = this.querySelector('button')!;
+			if (!('Notification' in window) || Notification.permission !== 'default') return;
+			button.hidden = false;
+			button.addEventListener('click', async () => {
+				await Notification.requestPermission();
+				button.hidden = true;
+			});
+		}
+
+		/** Notification navigateur, seulement si la personne regarde ailleurs : à l'écran, la page se met à jour. */
+		private notify(event: TicketEvent, me: string, view: string) {
+			if (event.by === me || !('Notification' in window) || Notification.permission !== 'granted') return;
+			if (!document.hidden && document.hasFocus()) return;
+			const mine = event.author === me;
+			const text: [string, string] | undefined =
+				// Un nouveau ticket : seulement pour celles et ceux qui sont sur l'onglet « Aider ».
+				event.type === 'created' && view === 'aider'
+					? ['Nouveau ticket', `${event.by} : ${event.title}`]
+					: event.type === 'taken' && mine
+						? ['Ton ticket est pris', `${event.by} s'en occupe : ${event.title}`]
+						: event.type === 'message' && (mine || event.helper === me)
+							? ['Nouveau message', `${event.by} sur « ${event.title} »`]
+							: undefined;
+			if (!text) return;
+			const notification = new Notification(text[0], { body: text[1], tag: `${event.type}-${event.ticketId}` });
+			notification.onclick = () => {
+				window.focus();
+				notification.close();
+				if (location.pathname !== `/entraide/${event.ticketId}`) location.assign(`/entraide/${event.ticketId}`);
+			};
+		}
+
+		private timer: ReturnType<typeof setTimeout> | undefined;
+
+		/** Recharge la page en arrière-plan et remplace les zones `data-live` : plusieurs événements d'affilée = un seul rechargement. */
+		private refresh() {
+			clearTimeout(this.timer);
+			this.timer = setTimeout(async () => {
+				try {
+					const response = await fetch(location.href, { headers: { Accept: 'text/html' } });
+					if (!response.ok || response.redirected) return; // session expirée, ticket supprimé : on laisse la page telle quelle
+					const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
+					// Si on lisait déjà le bas de la page, un nouveau message la fait défiler jusqu'à lui.
+					const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 160;
+					let changed = false;
+					for (const zone of document.querySelectorAll<HTMLElement>('[data-live]')) {
+						const next = fresh.querySelector(`[data-live="${zone.dataset.live}"]`);
+						if (!next || next.innerHTML === zone.innerHTML) continue;
+						zone.innerHTML = next.innerHTML;
+						changed = true;
+						// Un clignotement, pour qu'on voie ce qui vient de changer.
+						zone.classList.remove('live-updated');
+						void zone.offsetWidth;
+						zone.classList.add('live-updated');
+					}
+					if (changed && atBottom && this.dataset.view === 'ticket') scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+				} catch {
+					// Réseau coupé : la reconnexion du flux rattrapera.
+				}
+			}, 150);
+		}
+	}
+	customElements.define('entraide-live', EntraideLive);
+</script>

@@ -227,8 +227,4 @@ export const githubStore: ForumStore = {
 		);
 		forget(topic.number);
 	},
-
-	async preview(member, markdown) {
-		return client(member).markdown(markdown, GITHUB_REPO);
-	},
 };

@@ -1,0 +1,348 @@
+---
+// Un ticket d'entraide : sa description, son avancement, son aidant, le fil de messages (façon chat)
+// et les actions permises à la personne connectée. La page traite aussi ses formulaires (POST).
+import Layout from '../../layouts/Layout.astro';
+import Composer from '../../components/Composer.astro';
+import DocChip from '../../components/DocChip.astro';
+import EntraideLive from '../../components/EntraideLive.astro';
+import { describeDoc, docsIndex } from '../../lib/docs';
+import { ForumError, isExpired, messageOf } from '../../lib/errors';
+import { ago, fullDate, plural } from '../../lib/format';
+import { renderMarkdown } from '../../lib/markdown';
+import { memberOf } from '../../lib/store';
+import { STATUS_BADGE, STATUS_LABEL, addMessage, changeTicket, deleteTicket, getMessages, getTicket, isAction, rightsOn, type TicketStatus } from '../../lib/tickets';
+import { publishToForum } from '../../lib/tickets/publish';
+
+const user = Astro.locals.user!;
+const id = Number(Astro.params.id);
+if (!Number.isInteger(id) || id <= 0 || !getTicket(id)) return Astro.rewrite('/404');
+
+// --- Formulaires ------------------------------------------------------------------
+let formError = '';
+let draft = '';
+
+if (Astro.request.method === 'POST') {
+	const form = await Astro.request.formData();
+	const intent = String(form.get('intent'));
+	try {
+		if (intent === 'message') {
+			draft = String(form.get('body') ?? '').trim();
+			addMessage(id, user, draft);
+			return Astro.redirect(`/entraide/${id}#fin`, 303);
+		}
+		if (intent === 'delete') {
+			deleteTicket(id, user);
+			return Astro.redirect('/entraide?onglet=aider', 303);
+		}
+		if (intent === 'publish') await publishToForum(id, memberOf(Astro.locals));
+		else if (isAction(intent)) changeTicket(id, user, intent);
+		else throw new ForumError(400, 'Action inconnue.');
+		return Astro.redirect(`/entraide/${id}`, 303);
+	} catch (caught) {
+		if (isExpired(caught)) return Astro.redirect(`/connexion?retour=${encodeURIComponent(Astro.url.pathname)}`);
+		formError = messageOf(caught);
+		Astro.response.status = caught instanceof ForumError ? caught.status : 502;
+	}
+}
+
+const ticket = getTicket(id);
+if (!ticket) return Astro.rewrite('/404'); // supprimé entre-temps
+const messages = getMessages(id);
+const rights = rightsOn(ticket, user);
+const index = await docsIndex();
+const doc = describeDoc(index, ticket.doc);
+const avatar = (url: string) => url || '/favicon.png';
+
+const STEPS: TicketStatus[] = ['open', 'taken', 'resolved'];
+const current = STEPS.indexOf(ticket.status);
+// Une seule action principale à la fois : prendre, sinon résoudre, sinon publier.
+const primary = rights.take ? 'take' : rights.resolve ? 'resolve' : rights.publish ? 'publish' : '';
+const buttonClass = (action: string) => ['button', { primary: primary === action }];
+---
+
+<Layout title={ticket.title} noindex>
+	<EntraideLive me={user.login} view="ticket" ticket={ticket.id} />
+
+	<article>
+		<p><a href="/entraide?onglet=aider" class="back small">← Entraide</a></p>
+
+		{formError && <p class="alert" role="alert">{formError}</p>}
+
+		<div data-live="etat">
+			<header class="card head">
+				<p class="tags">
+					<span class={`badge ${STATUS_BADGE[ticket.status]}`}>{STATUS_LABEL[ticket.status]}</span>
+					{doc && <DocChip link={doc} />}
+				</p>
+				<h1>{ticket.title}</h1>
+
+				<ol class="steps" aria-label="Avancement du ticket">
+					{STEPS.map((step, position) => <li class:list={[step, { done: position <= current, now: position === current }]} aria-current={position === current ? 'step' : undefined}>{STATUS_LABEL[step]}</li>)}
+				</ol>
+
+				<p class="who muted small">
+					<img class="avatar" src={avatar(ticket.authorAvatar)} alt="" width="24" height="24" />
+					<span>Demandé par <strong>{ticket.authorLogin}</strong>{' '}<time datetime={ticket.createdAt} title={fullDate(ticket.createdAt)}>{ago(ticket.createdAt)}</time></span>
+					{ticket.helperLogin && <span>· {ticket.status === 'resolved' ? 'résolu avec' : 'pris par'} <strong>{ticket.helperLogin}</strong></span>}
+					{ticket.resolvedAt && <span>· <time datetime={ticket.resolvedAt} title={fullDate(ticket.resolvedAt)}>résolu {ago(ticket.resolvedAt)}</time></span>}
+				</p>
+
+				<div class="actions">
+					{rights.take && <form method="post"><input type="hidden" name="intent" value="take" /><button class:list={buttonClass('take')} type="submit">Je prends</button></form>}
+					{rights.resolve && <form method="post"><input type="hidden" name="intent" value="resolve" /><button class:list={buttonClass('resolve')} type="submit">C'est résolu</button></form>}
+					{rights.publish && <form method="post"><input type="hidden" name="intent" value="publish" /><button class:list={buttonClass('publish')} type="submit">Publier sur le forum</button></form>}
+					{rights.reopen && <form method="post"><input type="hidden" name="intent" value="reopen" /><button class="button" type="submit">Rouvrir</button></form>}
+					{rights.release && <form method="post"><input type="hidden" name="intent" value="release" /><button class="button" type="submit">Libérer</button></form>}
+					{rights.remove && <form method="post" class="push" onsubmit="return confirm('Supprimer ce ticket et ses messages ? Cette action est définitive.')"><input type="hidden" name="intent" value="delete" /><button class="button danger small" type="submit">Supprimer</button></form>}
+				</div>
+				{ticket.discussionNumber && <p class="published small">Publié sur le forum : <a href={`/sujet/${ticket.discussionNumber}`}>voir le sujet n° {ticket.discussionNumber}</a></p>}
+			</header>
+		</div>
+
+		<div class="card description rendered" set:html={renderMarkdown(ticket.body)} />
+
+		<div data-live="fil">
+			<h2>Échanges <span class="muted small">({plural(messages.length, 'message', 'messages')})</span></h2>
+			{
+				messages.length === 0 ? (
+					<p class="empty">
+						<strong>Aucun message pour l'instant.</strong><br />
+						{rights.take ? 'Clique « Je prends » puis pose une première question.' : ticket.authorLogin === user.login ? "Ajoute ce que tu as déjà essayé : ça aide l'aidant à démarrer." : 'Écris ici pour aider ou demander une précision.'}
+					</p>
+				) : (
+					<ol class="chat">
+						{messages.map((message) => {
+							const mine = message.authorLogin === user.login;
+							return (
+								<li class:list={['msg', { mine }]}>
+									<img class="avatar" src={avatar(message.authorAvatar)} alt="" width="32" height="32" />
+									<div class="bubble">
+										<header>
+											<strong>{message.authorLogin}</strong>
+											{message.authorLogin === ticket.authorLogin && <span class="badge">Demandeur</span>}
+											{message.authorLogin === ticket.helperLogin && <span class="badge taken">Aidant</span>}
+											<time class="muted small" datetime={message.createdAt} title={fullDate(message.createdAt)}>{ago(message.createdAt)}</time>
+										</header>
+										<div class="rendered" set:html={renderMarkdown(message.body)} />
+									</div>
+								</li>
+							);
+						})}
+					</ol>
+				)
+			}
+		</div>
+
+		<section id="fin" aria-labelledby="ecrire">
+			<h2 id="ecrire">Ton message</h2>
+			<form method="post">
+				<input type="hidden" name="intent" value="message" />
+				<Composer label="Message" value={draft} minlength={2} rows={4} placeholder="Une précision, une piste, un résultat…" />
+				<p class="send">
+					<button class="button primary" type="submit">Envoyer</button>
+					<span class="muted small"><kbd>Ctrl</kbd> + <kbd>Entrée</kbd> pour envoyer</span>
+				</p>
+			</form>
+		</section>
+	</article>
+</Layout>
+
+<script>
+	// Après l'envoi d'un message (adresse en `#fin`), on reste en bas du fil, sur la zone de saisie.
+	if (location.hash === '#fin') scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+
+	// Ctrl+Entrée (ou Cmd+Entrée) envoie le message, comme dans une messagerie.
+	// Écouté en capture, sur tout le composeur : la zone de texte comme l'éditeur visuel.
+	const composer = document.querySelector<HTMLElement>('#fin forum-composer');
+	composer?.addEventListener(
+		'keydown',
+		(event) => {
+			if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+				event.preventDefault();
+				event.stopPropagation();
+				composer.closest('form')?.requestSubmit();
+			}
+		},
+		true,
+	);
+</script>
+
+<style>
+	article {
+		max-width: var(--width-prose);
+	}
+
+	.card {
+		padding: var(--space-md) var(--space-lg);
+		background: var(--color-surface);
+		border: var(--rule);
+		border-radius: var(--radius);
+	}
+
+	.head {
+		margin-bottom: var(--space-md);
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	h1 {
+		font-size: var(--text-2xl);
+	}
+
+	/* Avancement : Ouvert › Pris › Résolu, l'étape en cours en couleur. */
+	.steps {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-xs);
+		margin: 0 0 var(--space-md);
+		padding: 0;
+		list-style: none;
+		font-size: var(--text-sm);
+	}
+
+	.steps li {
+		padding: 0.1rem 0.7rem;
+		border: var(--rule);
+		border-radius: 999px;
+		color: var(--color-text-muted);
+	}
+
+	.steps li.now {
+		font-weight: 700;
+	}
+
+	.steps li.now.open {
+		background: var(--color-accent);
+		border-color: var(--color-accent);
+		color: var(--color-on-accent);
+	}
+
+	.steps li.now.taken {
+		background: var(--color-taken);
+		border-color: var(--color-taken);
+		color: var(--color-bg);
+	}
+
+	.steps li.now.resolved {
+		background: var(--color-solved);
+		border-color: var(--color-solved);
+		color: var(--color-bg);
+	}
+
+	.who {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-xs) var(--space-sm);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm);
+		margin-top: var(--space-md);
+	}
+
+	.actions form {
+		margin: 0;
+	}
+
+	/* L'action destructrice est à l'écart, à droite. */
+	.actions .push {
+		margin-left: auto;
+	}
+
+	.published {
+		margin: var(--space-md) 0 0;
+	}
+
+	.description {
+		margin-bottom: var(--space-lg);
+	}
+
+	h2 {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-sm);
+		margin: var(--space-xl) 0 var(--space-md);
+		font-size: var(--text-xl);
+	}
+
+	/* Le fil, façon chat : mes messages à droite, ceux des autres à gauche. */
+	.chat {
+		display: grid;
+		/* minmax(0, …) : sans lui, un long bloc de code élargit la colonne au-delà de l'écran. */
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-md);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.msg {
+		display: flex;
+		align-items: flex-end;
+		gap: var(--space-sm);
+	}
+
+	.msg.mine {
+		flex-direction: row-reverse;
+	}
+
+	.bubble {
+		min-width: 0;
+		max-width: min(100%, 34rem);
+		padding: var(--space-sm) var(--space-md);
+		background: var(--color-surface);
+		border: var(--rule);
+		border-radius: var(--radius) var(--radius) var(--radius) 0;
+	}
+
+	.msg.mine .bubble {
+		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-rule));
+		border-radius: var(--radius) var(--radius) 0 var(--radius);
+	}
+
+	.bubble header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-xs) var(--space-sm);
+		margin-bottom: var(--space-xs);
+	}
+
+	.empty {
+		padding: var(--space-md) var(--space-lg);
+		background: var(--color-bg-alt);
+		border: 1px dashed var(--color-rule);
+		border-radius: var(--radius);
+		color: var(--color-text-muted);
+	}
+
+	.empty strong {
+		color: var(--color-ink);
+	}
+
+	.send {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-md);
+		margin: var(--space-sm) 0 0;
+	}
+
+	kbd {
+		padding: 0.05rem 0.35rem;
+		background: var(--color-bg-alt);
+		border: var(--rule);
+		border-radius: var(--radius-sm);
+		font-family: var(--font-mono);
+		font-size: 0.8em;
+	}
+</style>

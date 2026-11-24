@@ -138,5 +138,15 @@ export function describeDoc(index: DocsIndex, id: string | null): DocLink | null
 	return null;
 }
 
+/** Options d'une liste de thèmes : dossiers et pages, indentés comme dans le menu de la doc. */
+export function docOptions(nodes: DocNode[], depth = 0): { value: string; label: string }[] {
+	const indent = '   '.repeat(depth);
+	return nodes.flatMap((node) =>
+		node.type === 'page'
+			? [{ value: node.id, label: `${indent}${node.title}` }]
+			: [{ value: node.path, label: `${indent}${node.label} (tout le dossier)` }, ...docOptions(node.items, depth + 1)],
+	);
+}
+
 /** Vrai si le sujet relié à `ref` fait partie de `filter` (la page elle-même, ou un dossier qui la contient). */
 export const isWithin = (ref: string | null, filter: string) => ref !== null && (ref === filter || ref.startsWith(`${filter}/`));

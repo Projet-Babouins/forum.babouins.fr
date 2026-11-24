@@ -23,3 +23,6 @@ pnpm-debug.log*
 # Données du forum en développement (stockage local)
 .forum-local.json
 
+
+# Base SQLite de l'entraide (TICKETS_DB)
+data/

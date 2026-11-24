@@ -83,6 +83,4 @@ export interface ForumStore {
 	reply(member: Member, topic: Topic, body: string, replyTo?: string): Promise<void>;
 	/** Choisit la réponse qui résout une question. */
 	markAnswer(member: Member, topic: Topic, replyId: string): Promise<void>;
-	/** Aperçu d'un message, rendu comme il sera publié. */
-	preview(member: Member, markdown: string): Promise<string>;
 }

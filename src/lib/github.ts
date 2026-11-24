@@ -12,12 +12,12 @@ const TIMEOUT_MS = 15_000;
 export type GitHub = ReturnType<typeof createGitHub>;
 
 export function createGitHub(token: string) {
-	async function call<T>(method: string, path: string, body?: unknown, accept = 'application/vnd.github+json'): Promise<T> {
+	async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
 		const response = await fetch(`${GITHUB_API_URL}${path}`, {
 			method,
 			headers: {
 				Authorization: `Bearer ${token}`,
-				Accept: accept,
+				Accept: 'application/vnd.github+json',
 				'Content-Type': 'application/json',
 				'X-GitHub-Api-Version': '2022-11-28',
 			},
@@ -33,14 +33,12 @@ export function createGitHub(token: string) {
 			console.error(`GitHub ${response.status} sur ${method} ${path} : ${detail?.message ?? ''}`);
 			throw new ForumError(response.status === 404 ? 404 : 502, `GitHub a refusé l'action : ${detail?.message ?? response.status}.`);
 		}
-		return (accept === 'text/html' ? response.text() : response.json()) as Promise<T>;
+		return response.json() as Promise<T>;
 	}
 
 	return {
 		get: <T>(path: string) => call<T>('GET', path),
 		post: <T>(path: string, body: unknown) => call<T>('POST', path, body),
-		/** Markdown rendu par GitHub, exactement comme sur github.com (et nettoyé de la même façon). */
-		markdown: (text: string, context: string) => call<string>('POST', '/markdown', { text, mode: 'gfm', context }, 'text/html'),
 		/** API GraphQL : les Discussions n'existent que là. */
 		async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
 			const result = await call<{ data?: T; errors?: { message: string }[] }>('POST', '/graphql', { query, variables });

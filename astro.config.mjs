@@ -68,6 +68,8 @@ export default defineConfig({
 				values: ['local', 'github'],
 				default: 'local',
 			}),
+			// Fichier SQLite de l'entraide (voir README). À sauvegarder : c'est la seule donnée du forum qui n'est pas sur GitHub.
+			TICKETS_DB: envField.string({ context: 'server', access: 'public', default: './data/tickets.db' }),
 		},
 	},
 });
