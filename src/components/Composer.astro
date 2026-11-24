@@ -1,6 +1,8 @@
 ---
-// Zone de saisie d'un message, avec un onglet « Aperçu » (rendu exactement comme il sera publié).
-// Sans JavaScript, il reste une simple zone de texte : le formulaire fonctionne quand même.
+// Zone de saisie d'un message. Deux modes sur le même texte Markdown :
+// - « Visuel » : Milkdown Crepe, l'éditeur façon traitement de texte de la doc (/admin) ;
+// - « Markdown » : le texte brut.
+// La zone de texte reste le champ envoyé : sans JavaScript, le formulaire fonctionne quand même.
 interface Props {
 	name?: string;
 	value?: string;
@@ -8,9 +10,10 @@ interface Props {
 	placeholder?: string;
 	required?: boolean;
 	rows?: number;
+	minlength?: number;
 }
 
-const { name = 'body', value = '', label, placeholder, required = true, rows = 8 } = Astro.props;
+const { name = 'body', value = '', label, placeholder, required = true, rows = 8, minlength = 10 } = Astro.props;
 const id = `composer-${Math.random().toString(36).slice(2, 8)}`;
 ---
 
@@ -18,12 +21,13 @@ const id = `composer-${Math.random().toString(36).slice(2, 8)}`;
 	<div class="bar">
 		<label for={id}>{label}</label>
 		<div class="tabs" hidden>
-			<button type="button" class="tab" data-tab="write" aria-pressed="true">Écrire</button>
-			<button type="button" class="tab" data-tab="preview" aria-pressed="false">Aperçu</button>
+			<button type="button" class="tab" data-mode="visual" aria-pressed="true">Visuel</button>
+			<button type="button" class="tab" data-mode="source" aria-pressed="false">Markdown</button>
 		</div>
 	</div>
-	<textarea {id} {name} {rows} {placeholder} {required} minlength="10" maxlength="20000">{value}</textarea>
-	<div class="preview rendered" hidden aria-live="polite"></div>
+	<textarea {id} {name} {rows} {placeholder} {required} {minlength} maxlength="20000">{value}</textarea>
+	<div class="editor" hidden style={`--rows: ${rows}`}></div>
+	<p class="alert" role="alert" hidden></p>
 	<small class="muted">
 		Markdown accepté : <code>`code`</code>, blocs <code>```bash</code>, <strong>**gras**</strong>, listes, liens.
 		Pas d'information d'entreprise (IP, noms internes, identifiants).
@@ -31,40 +35,135 @@ const id = `composer-${Math.random().toString(36).slice(2, 8)}`;
 </forum-composer>
 
 <script>
+	// Crepe écrit `<br />` pour chaque ligne vide laissée dans le texte : on les retire.
+	const clean = (markdown: string) => markdown.replace(/^<br\s*\/?>\s*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+
 	class ForumComposer extends HTMLElement {
 		connectedCallback() {
 			const textarea = this.querySelector('textarea')!;
-			const preview = this.querySelector<HTMLElement>('.preview')!;
+			const host = this.querySelector<HTMLElement>('.editor')!;
 			const tabs = this.querySelector<HTMLElement>('.tabs')!;
-			tabs.hidden = false;
+			const alert = this.querySelector<HTMLElement>('.alert')!;
+			let crepe: import('@milkdown/crepe').Crepe | undefined;
 
-			const show = async (tab: string) => {
-				for (const button of tabs.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.tab === tab));
-				const previewing = tab === 'preview';
-				textarea.hidden = previewing;
-				preview.hidden = !previewing;
-				if (!previewing) return textarea.focus();
-
-				preview.textContent = 'Aperçu en cours…';
-				try {
-					const response = await fetch('/api/apercu', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ markdown: textarea.value }),
-					});
-					const result = (await response.json()) as { html?: string; error?: string };
-					// HTML rendu et nettoyé par GitHub (ou, en développement, par lib/markdown.ts).
-					if (result.html !== undefined) preview.innerHTML = result.html || '<p class="muted">Rien à afficher.</p>';
-					else preview.textContent = result.error ?? 'Aperçu indisponible.';
-				} catch {
-					preview.textContent = 'Aperçu indisponible.';
-				}
+			const sync = () => {
+				alert.hidden = true;
+				textarea.setCustomValidity('');
+				if (!crepe) return;
+				textarea.value = clean(crepe.getMarkdown());
+				// Le navigateur ne vérifie `minlength` que pour un texte tapé dans le champ lui-même.
+				const length = textarea.value.length;
+				if (length && length < textarea.minLength)
+					textarea.setCustomValidity(`Au moins ${textarea.minLength} caractères (actuellement ${length}).`);
 			};
 
-			tabs.addEventListener('click', (event) => {
-				const tab = (event.target as HTMLElement).closest('button')?.dataset.tab;
-				if (tab) void show(tab);
+			const mountVisual = async () => {
+				const { Crepe } = await import('@milkdown/crepe');
+				await import('@milkdown/crepe/theme/common/style.css');
+				crepe = new Crepe({
+					root: host,
+					defaultValue: textarea.value,
+					features: {
+						[Crepe.Feature.TopBar]: true,
+						[Crepe.Feature.Latex]: false,
+						[Crepe.Feature.ImageBlock]: false, // pas d'envoi d'images sur le forum
+					},
+					featureConfigs: {
+						[Crepe.Feature.Placeholder]: { text: textarea.placeholder || 'Écris ici… Tape « / » pour insérer un bloc.' },
+						[Crepe.Feature.TopBar]: {
+							headingOptions: [
+								{ label: 'Paragraphe', level: null },
+								{ label: 'Titre', level: 3 },
+								{ label: 'Sous-titre', level: 4 },
+							],
+						},
+						[Crepe.Feature.BlockEdit]: {
+							textGroup: {
+								label: 'Texte',
+								text: { label: 'Paragraphe' },
+								h1: null,
+								h2: null,
+								h3: { label: 'Titre' },
+								h4: { label: 'Sous-titre' },
+								h5: null,
+								h6: null,
+								quote: { label: 'Citation' },
+								divider: { label: 'Séparateur' },
+							},
+							listGroup: {
+								label: 'Listes',
+								bulletList: { label: 'Liste à puces' },
+								orderedList: { label: 'Liste numérotée' },
+								taskList: { label: 'Liste de tâches' },
+							},
+							advancedGroup: {
+								label: 'Blocs',
+								image: null,
+								codeBlock: { label: 'Bloc de code' },
+								table: { label: 'Tableau' },
+							},
+						},
+						[Crepe.Feature.CodeMirror]: {
+							searchPlaceholder: 'Chercher un langage',
+							noResultText: 'Aucun résultat',
+							copyText: 'Copier',
+						},
+					},
+				});
+				await crepe.create();
+				crepe.on((listener) => listener.markdownUpdated(sync)); // boutons de la barre d'outils
+			};
+
+			const setMode = async (mode: string) => {
+				for (const button of tabs.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+				sync();
+				await crepe?.destroy();
+				crepe = undefined;
+				textarea.setCustomValidity(''); // en mode Markdown, le navigateur vérifie lui-même
+				host.replaceChildren();
+				const visual = mode === 'visual';
+				textarea.hidden = visual;
+				host.hidden = !visual;
+				if (visual) {
+					await mountVisual();
+					host.querySelector<HTMLElement>('.ProseMirror')?.focus();
+				} else textarea.focus();
+			};
+
+			// markdownUpdated arrive avec un léger retard : on recopie aussi à chaque frappe,
+			// pour que Ctrl+Entrée envoie bien le dernier caractère tapé.
+			host.addEventListener('input', () => setTimeout(sync));
+
+			// En mode visuel, la zone de texte est cachée : le navigateur ne peut pas y afficher
+			// son message d'erreur (trop court, vide…). On l'affiche sous l'éditeur.
+			textarea.addEventListener('invalid', (event) => {
+				if (!textarea.hidden) return;
+				event.preventDefault();
+				alert.textContent = textarea.validationMessage;
+				alert.hidden = false;
+				host.querySelector<HTMLElement>('.ProseMirror')?.focus();
 			});
+
+			tabs.addEventListener('click', (event) => {
+				const button = (event.target as HTMLElement).closest('button');
+				if (button?.dataset.mode && button.getAttribute('aria-pressed') !== 'true') void setMode(button.dataset.mode);
+			});
+
+			// L'éditeur n'est chargé qu'une fois visible : un sujet peut avoir un formulaire
+			// de réponse replié sous chaque message.
+			new IntersectionObserver((entries, observer) => {
+				if (!entries.some((entry) => entry.isIntersecting)) return;
+				observer.disconnect();
+				tabs.hidden = false;
+				textarea.hidden = true;
+				host.hidden = false;
+				mountVisual().catch(() => {
+					// Éditeur indisponible : on garde la zone de texte.
+					tabs.hidden = true;
+					textarea.hidden = false;
+					host.hidden = true;
+				});
+			}).observe(this);
 		}
 	}
 	customElements.define('forum-composer', ForumComposer);
@@ -109,12 +208,57 @@ const id = `composer-${Math.random().toString(36).slice(2, 8)}`;
 		font-weight: 600;
 	}
 
-	.preview {
-		min-height: 10rem;
-		padding: var(--space-md);
+	.alert {
+		margin: 0;
+		color: var(--color-danger);
+		font-size: var(--text-sm);
+	}
+
+	/* Éditeur visuel (Milkdown Crepe) : couleurs branchées sur le thème du forum. */
+	.editor {
 		border: var(--rule);
 		border-radius: var(--radius);
 		background: var(--color-surface);
+	}
+
+	.editor:focus-within {
+		outline: 2px solid var(--color-focus);
+		outline-offset: 1px;
+	}
+
+	.editor :global(.milkdown) {
+		--crepe-color-background: var(--color-surface);
+		--crepe-color-on-background: var(--color-ink);
+		--crepe-color-surface: var(--color-surface);
+		--crepe-color-surface-low: var(--color-bg-alt);
+		--crepe-color-on-surface: var(--color-ink);
+		--crepe-color-on-surface-variant: var(--color-text-muted);
+		--crepe-color-outline: var(--color-rule);
+		--crepe-color-primary: var(--color-accent);
+		--crepe-color-secondary: var(--color-bg-alt);
+		--crepe-color-on-secondary: var(--color-ink);
+		--crepe-color-inverse: var(--color-ink);
+		--crepe-color-on-inverse: var(--color-surface);
+		--crepe-color-inline-code: var(--color-accent);
+		--crepe-color-error: var(--color-danger);
+		--crepe-color-hover: var(--color-bg-alt);
+		--crepe-color-selected: var(--color-bg-alt);
+		--crepe-color-inline-area: var(--color-bg-alt);
+		--crepe-base-font-size: var(--text-base);
+		--crepe-font-title: var(--font-title);
+		--crepe-font-default: var(--font-sans);
+		--crepe-font-code: var(--font-mono);
+		border-radius: var(--radius);
+	}
+
+	.editor :global(.milkdown-top-bar) {
+		border-radius: var(--radius) var(--radius) 0 0;
+	}
+
+	.editor :global(.milkdown .ProseMirror) {
+		min-height: calc(var(--rows) * 1.6em);
+		padding: var(--space-md) var(--space-lg) var(--space-md) 3.5rem;
+		outline: none;
 	}
 
 	code {

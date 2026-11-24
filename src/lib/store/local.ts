@@ -165,8 +165,4 @@ export const localStore: ForumStore = {
 		topic.answerId = replyId;
 		await save(topics);
 	},
-
-	async preview(_member, markdown) {
-		return renderMarkdown(markdown);
-	},
 };

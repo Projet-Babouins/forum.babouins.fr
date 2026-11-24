@@ -11,7 +11,7 @@ Bienvenue sur le dépôt de [forum.babouins.fr](https://forum.babouins.fr), le f
 
 ### 📚 Le principe
 
-Le forum n'a pas de base de données : **ses messages sont les GitHub Discussions de ce dépôt**. Le site n'en est que la vitrine, plus simple à lire, et reliée à la doc. Conséquences :
+Le forum n'a pas de base de données pour ses messages : **ils sont les GitHub Discussions de ce dépôt** (seule l'[entraide en classe](#-entraide-en-classe) a la sienne). Le site n'en est que la vitrine, plus simple à lire, et reliée à la doc. Conséquences :
 
 - le forum est **réservé aux personnes connectées** : on se connecte avec son compte GitHub (n'importe lequel), même pour lire ;
 - le forum lit et écrit avec le jeton de la personne connectée : un message part sur GitHub **à son nom**, et le serveur n'a aucun jeton à lui ;
@@ -48,6 +48,59 @@ Le forum n'applique rien en cachette : c'est GitHub qui vérifie les droits de c
 
 > ⚠️ Règle d'or : **aucune information venant d'une entreprise d'alternance** (adresses IP, noms de domaines internes, identifiants, captures d'écran non anonymisées). Un message reste dans l'historique de GitHub.
 
+## 🆘 Entraide en classe
+
+Un système de tickets, en temps réel, pour s'entraider pendant un cours. C'est la **seule** partie du forum qui n'est pas dans GitHub Discussions : les tickets sont dans une petite base SQLite sur le serveur. Pour un échange qui doit durer, un ticket résolu peut être publié comme sujet du forum.
+
+Le menu « Entraide » mène à `/entraide`, avec deux onglets :
+
+- **Demander de l'aide** : un titre, un message en Markdown, la page de la doc concernée (au choix), et la liste de **mes** tickets ;
+- **Aider** : les tickets des autres, ouverts puis pris (les plus récents d'abord), filtrables par thème de la doc, et les derniers résolus.
+
+Un ticket suit le cycle **Ouvert → Pris → Résolu**. Sa page (`/entraide/<numéro>`) montre la demande, l'état, l'aidant et le fil de messages.
+
+| Action | Qui peut la faire |
+| --- | --- |
+| Voir tous les tickets, écrire dans un fil | Tout compte connecté |
+| Créer un ticket | Tout compte connecté |
+| **Je prends** (Ouvert → Pris) | Tout le monde, sauf le demandeur ; un seul aidant par ticket |
+| **Libérer** (Pris → Ouvert) | L'aidant, ou un référent |
+| **C'est résolu** (→ Résolu) | Le demandeur, ou un référent |
+| **Rouvrir** (Résolu → Ouvert) | Le demandeur |
+| **Publier sur le forum** | Le demandeur, sur un ticket résolu, une seule fois |
+| **Supprimer** | Un référent |
+
+Ces règles sont vérifiées par le serveur (`src/lib/tickets/index.ts`) : cacher un bouton ne suffit pas.
+
+**Publier sur le forum** crée une question **à son nom** (avec son jeton, comme `/nouveau`) : la description du ticket, un résumé du fil et le repère de la page de la doc. Le ticket garde le numéro du sujet et en affiche le lien.
+
+### ⚡ Le temps réel
+
+Les pages Entraide ouvrent un flux d'événements (Server-Sent Events, `/api/entraide/flux`, ou `?ticket=<numéro>` pour un seul ticket) : les listes et le fil se mettent à jour sans recharger. Un bouton « Activer les notifications » demande la permission au navigateur, qui prévient quand la page est en arrière-plan :
+
+- d'un **nouveau ticket**, sur l'onglet « Aider » ;
+- de **« ton ticket est pris »**, pour le demandeur ;
+- d'un **nouveau message**, pour le demandeur et l'aidant.
+
+Les notifications ne marchent que **page Entraide ouverte** (pas de notification quand le navigateur est fermé). Sans JavaScript, tout fonctionne : il faut juste recharger la page.
+
+Le bus d'événements est **en mémoire** : il suppose un seul processus Node, comme sur Pelican. Pour en lancer plusieurs, il faudrait un vrai bus (Redis…). Derrière le reverse proxy, le flux doit être servi **sans mise en tampon** (le serveur envoie `X-Accel-Buffering: no`, que nginx respecte) ; un ping est envoyé toutes les 25 s pour que la connexion ne soit pas coupée.
+
+### 💾 La base et sa sauvegarde
+
+| Variable | Rôle |
+| --- | --- |
+| `TICKETS_DB` | Chemin du fichier SQLite. Défaut : `./data/tickets.db` (dans `data/`, ignoré par git). Créé au premier usage. |
+
+Le fichier doit être **conservé entre deux déploiements** (un volume ou un dossier hors du code sur Pelican) et **sauvegardé** : c'est la seule donnée du forum qui n'existe pas ailleurs. Deux façons :
+
+- arrêter le forum et copier le fichier `.db` ;
+- ou, à chaud, avec la commande `sqlite3 data/tickets.db ".backup sauvegarde.db"`.
+
+La base utilise `node:sqlite`, livré avec Node : aucune dépendance, mais **Node 22.13 ou plus récent**. Elle contient deux tables : `tickets` et `messages`. En développement, `TICKETS_DB` peut pointer sur un autre fichier pour repartir de zéro.
+
+Pour essayer à plusieurs en local, il faut deux sessions : un navigateur partage ses cookies par adresse, donc ouvre `http://localhost:4322` (toi, référent) et `http://bob.localhost:4322/connexion?dev=bob` (le pseudo `bob`, simple membre).
+
 ## 📦 Déploiement
 
 Comme la doc et la vitrine : un serveur Node.js (panel [Pelican](https://pelican.dev)). Ici, **toutes** les pages sont rendues par le serveur, à chaque visite (le forum est vivant). Après avoir récupéré `main` :
@@ -63,6 +116,7 @@ npm start
 | `HOST` | Mettre `0.0.0.0` pour être joignable depuis l'extérieur |
 | `PORT` | Le port attribué par Pelican |
 | `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | La GitHub App de la doc, pour la connexion (les mêmes valeurs que la doc) |
+| `TICKETS_DB` | Le fichier SQLite de l'entraide, à sauvegarder (voir [Entraide en classe](#-entraide-en-classe)) |
 
 Le HTTPS et le nom de domaine sont gérés par le reverse proxy. Comme pour la doc, tout ce qui a besoin de la vraie adresse la lit dans `site`, dans `astro.config.mjs`.
 
@@ -80,7 +134,7 @@ Le HTTPS et le nom de domaine sont gérés par le reverse proxy. Comme pour la d
 
 ## 🚀 Lancer le forum en local
 
-Il te faut [Node.js](https://nodejs.org) en version LTS (22.12 ou plus récent).
+Il te faut [Node.js](https://nodejs.org) en version LTS (22.13 ou plus récent).
 
 ```bash
 npm install
@@ -102,7 +156,7 @@ Pour voir les liens avec la doc, lance aussi la doc (`npm run dev` dans `docs.ba
 
 ## 🗂️ Structure du projet
 
-Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. Les formulaires sont de vrais formulaires HTML : le forum marche sans JavaScript, qui ne sert qu'à l'aperçu des messages et aux suggestions.
+Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. Les formulaires sont de vrais formulaires HTML : le forum marche sans JavaScript, qui ne sert qu'à l'éditeur visuel des messages et aux suggestions.
 
 ```text
 .
@@ -111,16 +165,18 @@ Le site est fait avec [Astro](https://astro.build), comme la doc et la vitrine. 
 │   ├── pages/
 │   │   ├── index.astro          Les sujets, filtrables par thème de la doc, type et état
 │   │   ├── sujet/[number].astro Un sujet et ses réponses ; traite aussi « répondre » et « c'est la solution »
+│   │   ├── entraide/            Entraide en classe : les tickets (liste, création) et un ticket (état, fil, actions)
 │   │   ├── nouveau.astro        Nouveau sujet (avec les sujets et pages qui se ressemblent)
 │   │   ├── recherche.astro      Recherche commune doc + forum
 │   │   ├── connexion/, deconnexion.ts
-│   │   └── api/                 sujets, recherche, brouillon (publics, pour la doc) ; apercu (membres)
+│   │   └── api/                 sujets, recherche, brouillon (publics, pour la doc) ; entraide/flux (temps réel)
 │   ├── lib/
 │   │   ├── docs.ts              Le lien avec la doc : son index, le repère d'un sujet
 │   │   ├── search.ts            La recherche commune
 │   │   ├── oauth.ts             Connexion via GitHub, rôle d'après le dépôt de la doc
 │   │   ├── github.ts            Petit client de l'API GitHub (REST et GraphQL)
 │   │   ├── markdown.ts          Rendu des messages en stockage local (en production, c'est GitHub)
+│   │   ├── tickets/             L'entraide : base SQLite, règles et droits, bus d'événements, publication sur le forum
 │   │   └── store/               Où vivent les sujets : github.ts (Discussions) ou local.ts (fichier)
 │   ├── components/              Header, Footer, liste de sujets, arbre des thèmes, zone de saisie…
 │   └── styles/global.css        La palette de la vitrine, plus les éléments du forum

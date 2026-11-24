@@ -21,7 +21,8 @@ const here = Astro.url.pathname + Astro.url.search;
 		</form>
 
 		<nav class="links" aria-label="Navigation principale">
-			<a href={docsHome()}>Docs</a>
+			<a href="/entraide">Entraide</a>
+				<a href={docsHome()}>Docs</a>
 			{
 				user ? (
 					<form method="post" action="/deconnexion" class="who">

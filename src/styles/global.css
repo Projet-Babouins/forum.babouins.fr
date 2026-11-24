@@ -29,6 +29,9 @@
   --color-focus: light-dark(#1d4ed8, #93c5fd);
   /* Question résolue : un vert sourd, le seul ajout à la palette de la vitrine. */
   --color-solved: light-dark(#2f6b3a, #8fcf98);
+  /* Ticket d'entraide pris (bleu sourd) et action destructrice (rouge sourd). */
+  --color-taken: light-dark(#1e5a8c, #8cc1ea);
+  --color-danger: light-dark(#a01c1c, #f0a0a0);
 
   /* Blocs de code : sombres dans les deux thèmes. */
   --color-code-bg: #24292e;
@@ -412,6 +415,15 @@ main {
   color: var(--color-on-accent);
 }
 
+.button.danger {
+  color: var(--color-danger);
+}
+
+.button.danger:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
 .button.small {
   padding: 0.3rem 0.7rem;
   font-size: var(--text-sm);
@@ -444,6 +456,17 @@ main {
 
 .badge.solved {
   color: var(--color-solved);
+  border-color: currentColor;
+}
+
+/* États d'un ticket d'entraide : ouvert (terre cuite), pris (bleu), résolu (vert, .solved). */
+.badge.open {
+  color: var(--color-accent);
+  border-color: currentColor;
+}
+
+.badge.taken {
+  color: var(--color-taken);
   border-color: currentColor;
 }
 
@@ -541,5 +564,23 @@ fieldset {
   .with-aside > aside {
     position: sticky;
     top: 5.5rem;
+  }
+}
+
+/* Entraide : une zone mise à jour en direct clignote une fois, pour qu'on le remarque. */
+.live-updated {
+  animation: live-flash 1.8s ease-out;
+}
+
+@keyframes live-flash {
+  from {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-updated {
+    animation: none;
   }
 }

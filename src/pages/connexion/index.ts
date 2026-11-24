@@ -12,7 +12,11 @@ export const GET: APIRoute = async ({ session, redirect, url }) => {
 	// Raccourci de développement, en stockage local seulement (il ne donne pas de jeton GitHub).
 	// `isLocalMode()` vaut toujours `false` dans un build de production : ce bloc n'y sert jamais.
 	if (isLocalMode() && FORUM_DEV_LOGIN) {
-		session?.set('user', { login: FORUM_DEV_LOGIN, name: FORUM_DEV_LOGIN, avatar: '', role: 'referent' });
+		// `?dev=pseudo` : se connecter sous un autre pseudo (simple membre) pour essayer les droits à plusieurs.
+		// Un navigateur partage ses cookies par adresse : ouvrir `localhost` et `127.0.0.1` donne deux sessions.
+		const other = url.searchParams.get('dev');
+		const login = other && /^[\w-]{1,39}$/.test(other) ? other : FORUM_DEV_LOGIN;
+		session?.set('user', { login, name: login, avatar: '', role: login === FORUM_DEV_LOGIN ? 'referent' : 'membre' });
 		const returnTo = await session?.get('returnTo');
 		session?.delete('returnTo');
 		return redirect(safeReturnTo(returnTo));

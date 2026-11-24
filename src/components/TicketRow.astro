@@ -1,0 +1,111 @@
+---
+// Un ticket d'entraide dans une liste, en carte : état (couleur), thème de la doc, titre,
+// demandeur avec son avatar, aidant, temps relatif. Toute la carte mène au ticket.
+import DocChip from './DocChip.astro';
+import { describeDoc, type DocsIndex } from '../lib/docs';
+import { ago, fullDate, plural } from '../lib/format';
+import { STATUS_BADGE, STATUS_LABEL, type Ticket } from '../lib/tickets';
+
+interface Props {
+	ticket: Ticket;
+	index: DocsIndex;
+}
+
+const { ticket, index } = Astro.props;
+const doc = describeDoc(index, ticket.doc);
+---
+
+<li class:list={['ticket', ticket.status]}>
+	<div class="top">
+		<span class={`badge ${STATUS_BADGE[ticket.status]}`}>{STATUS_LABEL[ticket.status]}</span>
+		{doc && <span class="chip"><DocChip link={doc} /></span>}
+		<span class="count muted small">{plural(ticket.messageCount, 'message', 'messages')}</span>
+	</div>
+	<h3><a href={`/entraide/${ticket.id}`}>{ticket.title}</a></h3>
+	<p class="meta muted small">
+		<img class="avatar" src={ticket.authorAvatar || '/favicon.png'} alt="" width="22" height="22" />
+		<span>{ticket.authorLogin}</span>
+		<span aria-hidden="true">·</span>
+		<time datetime={ticket.createdAt} title={fullDate(ticket.createdAt)}>{ago(ticket.createdAt)}</time>
+		{ticket.helperLogin && <><span aria-hidden="true">·</span><span>{ticket.status === 'resolved' ? 'résolu avec' : 'pris par'} <strong>{ticket.helperLogin}</strong></span></>}
+	</p>
+</li>
+
+<style>
+	.ticket {
+		position: relative;
+		margin-bottom: var(--space-sm);
+		padding: var(--space-md);
+		background: var(--color-surface);
+		border: var(--rule);
+		border-left: 4px solid var(--color-rule);
+		border-radius: var(--radius);
+	}
+
+	.ticket.open {
+		border-left-color: var(--color-accent);
+	}
+
+	.ticket.taken {
+		border-left-color: var(--color-taken);
+	}
+
+	.ticket.resolved {
+		border-left-color: var(--color-solved);
+	}
+
+	.ticket:hover {
+		border-color: var(--color-accent);
+	}
+
+	.top {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-xs);
+	}
+
+	/* Le lien vers la doc reste cliquable au-dessus du lien étendu de la carte. */
+	.chip {
+		position: relative;
+		z-index: 1;
+	}
+
+	.count {
+		margin-left: auto;
+	}
+
+	h3 {
+		margin: 0 0 var(--space-xs);
+		font-family: var(--font-sans);
+		font-size: var(--text-lg);
+		font-weight: 600;
+		letter-spacing: 0;
+		line-height: 1.3;
+	}
+
+	h3 a {
+		color: var(--color-ink);
+		text-decoration: none;
+	}
+
+	/* Toute la carte est cliquable. */
+	h3 a::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+	}
+
+	h3 a:hover {
+		color: var(--color-accent);
+	}
+
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-xs) var(--space-sm);
+		margin: 0;
+	}
+</style>

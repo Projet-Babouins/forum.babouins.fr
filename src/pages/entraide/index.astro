@@ -1,0 +1,245 @@
+---
+// Entraide en classe : « Demander de l'aide » (créer un ticket, suivre les siens) et « Aider »
+// (les tickets des autres). La page traite aussi son formulaire (POST) : créer un ticket.
+import Layout from '../../layouts/Layout.astro';
+import Composer from '../../components/Composer.astro';
+import EntraideLive from '../../components/EntraideLive.astro';
+import TicketRow from '../../components/TicketRow.astro';
+import { describeDoc, docOptions, docsIndex, isValidDocId, isWithin } from '../../lib/docs';
+import { ForumError, messageOf } from '../../lib/errors';
+import { createTicket, listTickets } from '../../lib/tickets';
+
+const user = Astro.locals.user!;
+const index = await docsIndex();
+const params = Astro.url.searchParams;
+const tab = params.get('onglet') === 'aider' ? 'aider' : 'demander';
+const filter = isValidDocId(params.get('doc') ?? '') ? params.get('doc')! : '';
+
+let title = '';
+let doc = '';
+let body = '';
+let error = '';
+
+if (Astro.request.method === 'POST') {
+	const form = await Astro.request.formData();
+	title = String(form.get('title') ?? '').trim();
+	doc = String(form.get('doc') ?? '');
+	body = String(form.get('body') ?? '').trim();
+	try {
+		if (doc && !(isValidDocId(doc) && describeDoc(index, doc))) throw new ForumError(400, "Ce thème n'existe pas dans la doc.");
+		return Astro.redirect(`/entraide/${createTicket(user, { title, body, doc: doc || null })}`, 303);
+	} catch (caught) {
+		error = messageOf(caught);
+		Astro.response.status = caught instanceof ForumError ? caught.status : 500;
+	}
+}
+
+const all = listTickets();
+// Mes tickets : ceux qui attendent encore d'abord, puis les résolus.
+const mine = all.filter((ticket) => ticket.authorLogin === user.login);
+const myActive = mine.filter((ticket) => ticket.status !== 'resolved');
+const myDone = mine.filter((ticket) => ticket.status === 'resolved');
+// Onglet « Aider » : les tickets des autres, filtrés par thème. Ouverts, puis pris, puis résolus.
+const others = all.filter((ticket) => ticket.authorLogin !== user.login && (!filter || isWithin(ticket.doc, filter)));
+const open = others.filter((ticket) => ticket.status === 'open');
+const taken = others.filter((ticket) => ticket.status === 'taken');
+const solved = others.filter((ticket) => ticket.status === 'resolved').slice(0, 20);
+// Compteur de l'onglet « Aider » : tous les ouverts des autres, quel que soit le filtre.
+const waiting = all.filter((ticket) => ticket.status === 'open' && ticket.authorLogin !== user.login).length;
+const options = docOptions(index.tree);
+---
+
+<Layout title="Entraide" noindex>
+	<EntraideLive me={user.login} view={tab} />
+
+	<header class="head">
+		<h1>Entraide</h1>
+		<p class="muted">Un souci en classe ? Ouvre un ticket : quelqu'un le prend, vous échangez ici, et le ticket peut finir sur le forum.</p>
+	</header>
+
+	<nav class="tabs" aria-label="Entraide" data-live="onglets">
+		<a href="/entraide" aria-current={tab === 'demander' ? 'page' : undefined}>
+			Demander de l'aide
+			{myActive.length > 0 && <span class="n" title="Tes tickets en cours">{myActive.length}</span>}
+		</a>
+		<a href="/entraide?onglet=aider" aria-current={tab === 'aider' ? 'page' : undefined}>
+			Aider
+			{waiting > 0 && <span class="n alert-n" title="Tickets qui attendent un aidant">{waiting}</span>}
+		</a>
+	</nav>
+
+	{
+		tab === 'demander' ? (
+			<div class="with-aside">
+				<section aria-labelledby="nouveau">
+					<h2 id="nouveau">Nouveau ticket</h2>
+					{error && <p class="alert" role="alert">{error}</p>}
+					<form method="post" action="/entraide">
+						<label class="field">
+							<span>Titre</span>
+							<input type="text" name="title" value={title} required minlength="8" maxlength="200" autocomplete="off" placeholder="Ex. : « Mon serveur ne répond plus au ping »" />
+						</label>
+						<label class="field">
+							<span>Thème de la doc <small>(facultatif)</small></span>
+							<select name="doc">
+								<option value="">Aucun</option>
+								{options.map((option) => <option value={option.value} selected={option.value === doc}>{option.label}</option>)}
+							</select>
+							<small>Aide les autres à savoir de quoi tu parles.</small>
+						</label>
+						<div class="field">
+							<Composer label="Ton problème" value={body} placeholder="Ce que tu essaies de faire, ce qui se passe, le message d'erreur exact…" rows={8} />
+						</div>
+						<p><button type="submit" class="button primary">Demander de l'aide</button></p>
+					</form>
+				</section>
+
+				<aside aria-labelledby="mes-tickets" data-live="liste">
+					<h2 id="mes-tickets">Mes tickets</h2>
+					{
+						mine.length === 0 ? (
+							<p class="empty">
+								<strong>Aucun ticket pour l'instant.</strong><br />
+								Remplis le formulaire : dès qu'une personne le prend, tu le vois ici, en direct.
+							</p>
+						) : (
+							<>
+								<ul class="tickets">{myActive.map((ticket) => <TicketRow ticket={ticket} index={index} />)}</ul>
+								{myActive.length === 0 && <p class="empty">Tout est résolu. 🎉</p>}
+								{myDone.length > 0 && <h3 class="sub">Résolus <span class="muted">({myDone.length})</span></h3>}
+								<ul class="tickets">{myDone.map((ticket) => <TicketRow ticket={ticket} index={index} />)}</ul>
+							</>
+						)
+					}
+				</aside>
+			</div>
+		) : (
+			<>
+				<form method="get" class="filter">
+					<input type="hidden" name="onglet" value="aider" />
+					<label for="theme" class="visually-hidden">Thème de la doc</label>
+					<select id="theme" name="doc">
+						<option value="">Tous les thèmes</option>
+						{options.map((option) => <option value={option.value} selected={option.value === filter}>{option.label}</option>)}
+					</select>
+					<button type="submit" class="button small">Filtrer</button>
+				</form>
+
+				<div data-live="liste">
+					<h2>Ouverts <span class="badge open">{open.length}</span></h2>
+					{
+						open.length === 0 ? (
+							<p class="empty">
+								<strong>{filter ? 'Aucun ticket ouvert sur ce thème.' : "Personne n'attend d'aide pour l'instant."}</strong><br />
+								{filter ? <a href="/entraide?onglet=aider">Voir tous les thèmes</a> : <>Un blocage de ton côté ? <a href="/entraide">Demande de l'aide</a>.</>}
+							</p>
+						) : (
+							<ul class="tickets">{open.map((ticket) => <TicketRow ticket={ticket} index={index} />)}</ul>
+						)
+					}
+
+					<h2>Pris <span class="badge taken">{taken.length}</span></h2>
+					{taken.length === 0 ? <p class="empty">Aucun ticket en cours : tout ce qui est pris apparaîtra ici.</p> : <ul class="tickets">{taken.map((ticket) => <TicketRow ticket={ticket} index={index} />)}</ul>}
+
+					<h2>Résolus <span class="badge solved">{solved.length}</span></h2>
+					{solved.length === 0 ? <p class="empty">Aucun ticket résolu pour l'instant.</p> : <ul class="tickets">{solved.map((ticket) => <TicketRow ticket={ticket} index={index} />)}</ul>}
+				</div>
+			</>
+		)
+	}
+</Layout>
+
+<style>
+	.head p {
+		max-width: var(--width-prose);
+	}
+
+	.tabs {
+		display: flex;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-lg);
+		border-bottom: var(--rule);
+	}
+
+	.tabs a {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-bottom: -1px;
+		padding: var(--space-sm) var(--space-md);
+		border-bottom: 3px solid transparent;
+		color: var(--color-text-muted);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.tabs a:hover {
+		color: var(--color-ink);
+	}
+
+	.tabs a[aria-current] {
+		border-bottom-color: var(--color-accent);
+		color: var(--color-ink);
+	}
+
+	/* Compteur d'un onglet. `.alert-n` : ce qui attend une action de ta part. */
+	.n {
+		min-width: 1.4rem;
+		padding: 0 0.4rem;
+		background: var(--color-bg-alt);
+		border-radius: 999px;
+		color: var(--color-text-muted);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		line-height: 1.4rem;
+		text-align: center;
+	}
+
+	.n.alert-n {
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+	}
+
+	.filter {
+		display: flex;
+		gap: var(--space-sm);
+		max-width: 30rem;
+		margin-bottom: var(--space-md);
+	}
+
+	h2 {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-top: var(--space-lg);
+		font-size: var(--text-xl);
+	}
+
+	h2:first-child {
+		margin-top: 0;
+	}
+
+	.sub {
+		margin: var(--space-lg) 0 var(--space-sm);
+		font-size: var(--text-lg);
+	}
+
+	.tickets {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	/* État vide : une phrase qui dit quoi faire. */
+	.empty {
+		padding: var(--space-md) var(--space-lg);
+		background: var(--color-bg-alt);
+		border: 1px dashed var(--color-rule);
+		border-radius: var(--radius);
+		color: var(--color-text-muted);
+	}
+
+	.empty strong {
+		color: var(--color-ink);
+	}
+</style>
